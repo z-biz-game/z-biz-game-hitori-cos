@@ -99,9 +99,17 @@ export function createView(canvas, handlers = {}) {
 
   function measureBox() {
     const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-    canvas.style.height = `${cssH}px`;
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    // 同值就不写：`style.height` 与 `canvas.width/height` 的赋值都会改变被 ResizeObserver 观察的那个
+    // 盒子，于是回调再进一次自己——忙一点的机器上 Chrome 直接报
+    // "ResizeObserver loop completed with undelivered notifications."，页面的错误采集器把它算成一次
+    // throw，浏览器闸就红（GitHub runner 上实测红过 9 条，本机永远复现不出来）。
+    // 跳过赋值不会留下残影：draw() 在 measureBox() 之后显式 clearRect。
+    const styleH = `${cssH}px`;
+    const bw = Math.round(cssW * dpr);
+    const bh = Math.round(cssH * dpr);
+    if (canvas.style.height !== styleH) canvas.style.height = styleH;
+    if (canvas.width !== bw) canvas.width = bw;
+    if (canvas.height !== bh) canvas.height = bh;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
