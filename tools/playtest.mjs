@@ -694,11 +694,23 @@ const SCENARIOS = {
       const key = div.querySelector('h3 span').textContent.split(' ')[0];
       const rows = h.lots.filter((l) => l.tier === key);
       const g = rows.map((l) => l.guesses);
-      const want = Math.min(...g) === Math.max(...g) ? \`枯竭 \${Math.min(...g)} 次\` : \`枯竭 \${Math.min(...g)}-\${Math.max(...g)} 次\`;
-      return { key, printed: div.querySelector('.blurb b').textContent, want, rows: rows.length };
+      // Recomputed here, in page code, from the rows the page loaded: a min/max span would let one
+      // board advertise a whole tier, so every value has to arrive with the number of boards
+      // carrying it. Written independently of js/core/library.js:spreadText on purpose.
+      const dist = (vals, unit, suffix) => unit + ' ' + [...vals.reduce((m, v) => m.set(v, (m.get(v) || 0) + 1), new Map()).entries()]
+        .sort((a, b) => a[0] - b[0]).map((e) => \`\${e[0]} \${suffix} ×\${e[1]} 盘\`).join(' · ');
+      const want = dist(g, '枯竭', '次');
+      // The counts on the printed sentence have to add up to the boards that exist: a tier that
+      // advertised 3 次 ×9 盘 · 5 次 ×2 盘 over ten rows would pass a substring check. Only the
+      // 枯竭 clause is summed — the same <b> also carries 假设, which counts the same boards again.
+      const printed = div.querySelector('.blurb b').textContent;
+      const carried = (printed.split(' · 假设')[0].match(/×(\\d+) 盘/g) || [])
+        .reduce((a, s) => a + Number(/×(\\d+)/.exec(s)[1]), 0);
+      return { key, printed, want, rows: rows.length, carried };
     });
-    rec('the printed difficulty is the measured 枯竭 count per tier, recomputed from the rows',
-      blurbs.length === 4 && blurbs.every((b) => b.rows > 0 && b.printed.indexOf(b.want) === 0 && /枯竭 \\d+/.test(b.printed)), blurbs);
+    rec('the printed difficulty is the measured 枯竭 multiset per tier, recomputed from the rows',
+      blurbs.length === 4 && blurbs.every((b) => b.rows > 0 && b.printed.indexOf(b.want) === 0
+        && /枯竭 \\d+ 次 ×\\d+ 盘/.test(b.printed) && b.carried === b.rows), blurbs);
     const ruleText = Array.from(document.querySelectorAll('#rules li')).map((li) => li.textContent.replace(/\\s+/g, ''));
     rec('the three rules are printed once each, in the frozen wording and order',
       ruleText.length === 3 && ruleText.every((t, k) => t.replace(/[·\\s]/g, '').indexOf(RULES[k].replace(/[·\\s]/g, '')) >= 0), ruleText);
@@ -768,10 +780,16 @@ const SCENARIOS = {
     const head = D('shelf').querySelector('h3').textContent;
     const tierRows = h.lots.filter((l) => l.tier === h.state.tier);
     const gs = tierRows.map((l) => l.guesses);
-    const gLo = Math.min.apply(null, gs); const gHi = Math.max.apply(null, gs);
-    rec('the shelf heading quotes 枯竭 off the rows, not the tier load off a baked string',
-      head.indexOf(gLo === gHi ? '枯竭 ' + gLo + ' 次' : '枯竭 ' + gLo + '-' + gHi + ' 次') > 0 && head.indexOf('假设') > 0,
-      { head, band: [gLo, gHi] });
+    const ds = tierRows.map((l) => l.depth);
+    // The shelf heading is the *baked* string, so this is the page-side half of the promise that
+    // js/data/lots.js spells the same multiset the rows carry — with a board count per value, not
+    // a min/max a single row could advertise.
+    const dist = (vals, unit, suffix) => unit + ' ' + [...vals.reduce((m, v) => m.set(v, (m.get(v) || 0) + 1), new Map()).entries()]
+      .sort((a, b) => a[0] - b[0]).map((e) => \`\${e[0]} \${suffix} ×\${e[1]} 盘\`).join(' · ');
+    const wantG = dist(gs, '枯竭', '次'); const wantD = dist(ds, '假设', '层');
+    rec('the shelf heading quotes 枯竭 and 假设 off the rows, each value with its board count',
+      head.indexOf(wantG) > 0 && head.indexOf(wantD) > 0 && head.indexOf('负荷') < 0,
+      { head, wantG, wantD, boards: gs.length });
     const nextLink = document.querySelector("#shelf p a[href^='#/lot/']");
     rec('and offers the row that actually follows this one in the campaign',
       !!nextLink && nextLink.getAttribute('href').indexOf('#/lot/') === 0 && h.lots.findIndex((l) => l.id === nextLink.textContent) === h.lots.findIndex((l) => l.id === h.state.id) + 1,

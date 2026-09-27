@@ -2,9 +2,11 @@
 // Each row carries the unique-solution count, the assumption depth and the number of
 // times pure deduction ran dry, all three produced by js/core/solve.js and re-checked
 // against the independent route in js/core/brute.js. Re-run `node tools/bake.mjs`
-// instead of hand-editing: test/library.test.mjs re-solves every row and fails if a
-// line and its numbers ever disagree.
-export const TIERS_META = [{"key":"nook","label":"一隅","n":4,"min":0,"max":0,"blurb":"4×4 · 枯竭 0 次 · 假设 0 层"},{"key":"quiet","label":"静室","n":4,"min":2,"max":2,"blurb":"4×4 · 枯竭 1 次 · 假设 1 层"},{"key":"study","label":"书房","n":5,"min":4,"max":4,"blurb":"5×5 · 枯竭 2 次 · 假设 2 层"},{"key":"retreat","label":"隐修","n":6,"min":6,"max":10,"blurb":"6×6 · 枯竭 3-5 次 · 假设 3-5 层"}];
+// instead of hand-editing: tools/audit-lots.mjs re-derives every number on a row — and the
+// tier blurb, which names the board count for each difficulty value — from the rows
+// themselves, and test/brute.test.mjs re-proves all 40 boards by the second route, so a
+// line and its numbers ever disagreeing is a red gate.
+export const TIERS_META = [{"key":"nook","label":"一隅","n":4,"min":0,"max":0,"blurb":"4×4 · 枯竭 0 次 ×10 盘 · 假设 0 层 ×10 盘"},{"key":"quiet","label":"静室","n":4,"min":2,"max":2,"blurb":"4×4 · 枯竭 1 次 ×10 盘 · 假设 1 层 ×10 盘"},{"key":"study","label":"书房","n":5,"min":4,"max":4,"blurb":"5×5 · 枯竭 2 次 ×10 盘 · 假设 2 层 ×10 盘"},{"key":"retreat","label":"隐修","n":6,"min":6,"max":10,"blurb":"6×6 · 枯竭 3 次 ×9 盘 · 5 次 ×1 盘 · 假设 3 层 ×9 盘 · 5 层 ×1 盘"}];
 export const LOTS = [
   {"id":"nook-01","tier":"nook","n":4,"cells":[3,4,2,2,3,3,4,1,1,3,3,3,4,1,2,3],"solution":[2,4,9,11],"solutionCount":1,"depth":0,"guesses":0,"nodes":1,"pairs":9,"linesWithPairs":7,"shades":4,"load":0,"seed":"bake-nook-1","brute":{"mode":"full","subsets":65536}},
   {"id":"nook-02","tier":"nook","n":4,"cells":[4,2,2,4,4,1,2,3,4,4,1,4,2,3,4,1],"solution":[0,2,8,11],"solutionCount":1,"depth":0,"guesses":0,"nodes":1,"pairs":10,"linesWithPairs":5,"shades":4,"load":0,"seed":"bake-nook-8","brute":{"mode":"full","subsets":65536}},

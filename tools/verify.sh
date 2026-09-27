@@ -73,6 +73,24 @@ node tools/playtest.mjs selftest >/tmp/hitori-selftest.log 2>&1 || {
 tail -1 /tmp/hitori-selftest.log
 
 # --------------------------------------------------------------------------- one server, one browser
+# Ports are this project's own only if nothing is already sitting on them. A headless Chrome leaked
+# by another run answers on :9365 in milliseconds, and the wait loop below would then be satisfied
+# by *that* browser: the gate would drive someone else's Chrome, with someone else's profile, and
+# print a verdict for it. A port we did not launch is refused here rather than trusted.
+# The DevTools check is unconditional: this script always launches its own Chrome, including in
+# BASE_URL mode, so a browser already answering on the port is someone else's in every form.
+curl -fsS -m 1 "http://127.0.0.1:$CDP_PORT/json/version" >/dev/null 2>&1 && {
+  echo ":$CDP_PORT is already answering DevTools — that is not this run's Chrome." >&2
+  echo "  find the owner with: lsof -nP -iTCP:$CDP_PORT -sTCP:LISTEN" >&2
+  echo "  or run this gate on a free port: CDP_PORT=93xx bash tools/verify.sh" >&2
+  exit 2; }
+if [ "$LOCAL" = 1 ]; then
+  # But BASE_URL mode exists precisely to test a server this script did not start.
+  curl -fsS -m 1 "$BASE" >/dev/null 2>&1 && {
+    echo ":$WEB_PORT is already serving $BASE — this run did not start that server." >&2
+    echo "  find the owner with: lsof -nP -iTCP:$WEB_PORT -sTCP:LISTEN" >&2
+    exit 2; }
+fi
 SPID=0
 CPID=0
 UDD=""
@@ -105,8 +123,31 @@ curl -fsS -m 2 "http://127.0.0.1:$CDP_PORT/json/version" >/dev/null 2>&1 || {
 
 # Pre-flight: prove the bytes about to be tested are this app's, not some sibling's index.html
 # served on the same port.
+#
+# The server is a background child, so the first curl can easily lose the race with `listen()` —
+# and losing it used to print "nothing served" while the log still held the *previous* run's
+# banner, which sent everyone hunting for a phantom port conflict. Wait on our own child instead
+# of guessing, then read the bytes once for real.
+if [ "$LOCAL" = 1 ]; then
+  for i in $(seq 1 40); do
+    curl -fsS -m 2 "$BASE" >/dev/null 2>&1 && break
+    kill -0 $SPID 2>/dev/null || break
+    sleep 0.25
+  done
+fi
 SERVED=$(curl -fsS -m 5 "$BASE" 2>/dev/null || true)
-case "$SERVED" in *js/main.js*) ;; *) echo "nothing served at $BASE (see /tmp/hitori-server.log)" >&2; exit 4; ;; esac
+case "$SERVED" in
+  *js/main.js*) ;;
+  *)
+    echo "nothing served at $BASE" >&2
+    if [ "$LOCAL" = 1 ]; then
+      echo "--- what this run's server wrote (its own file, not a previous run's):" >&2
+      sed 's/^/  /' /tmp/hitori-server.log >&2
+      echo "--- listeners on :$WEB_PORT:" >&2
+      lsof -nP -iTCP:"$WEB_PORT" -sTCP:LISTEN 2>/dev/null | tail -3 >&2
+    fi
+    exit 4 ;;
+esac
 printf '%s' "$SERVED" | grep -qi hitori || {
   echo "$BASE is serving a different app, not 抽刀断水/hitori" >&2; exit 4; }
 

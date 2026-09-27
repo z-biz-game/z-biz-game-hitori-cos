@@ -11,6 +11,7 @@
     "electron": "electron .",
     "bake": "node tools/bake.mjs",
     "audit": "node tools/audit-lots.mjs",
+    "loads": "node tools/load-audit.mjs",
     "check": "for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done && node tools/playtest.mjs selftest && echo OK",
     "test": "node --test test/",
     "unit": "for f in test/*.test.mjs; do echo \"--- $f\"; node \"$f\" || exit 1; done",

@@ -77,9 +77,23 @@ function spread(values) {
   return { min: s[0], max: s[s.length - 1], med: median(s) };
 }
 
+// A tier's difficulty is a multiset over the boards that actually shipped, and a `min-max` span
+// hides how many boards carry each end: 隐修 advertised 枯竭 3-5 次 off nine boards at 3 and one
+// at 5. So the text form names every value with its board count. The range is what a reader can
+// reconstruct from it, never what the tier promises on its own.
+export function spreadText(values, unit, suffix = '') {
+  const c = new Map();
+  for (const v of values) c.set(v, (c.get(v) || 0) + 1);
+  const parts = [...c.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([v, n]) => `${v}${suffix ? ` ${suffix}` : ''} ×${n} 盘`);
+  return `${unit} ${parts.join(' · ')}`;
+}
+
 // What the pool actually contains, measured rather than claimed. The docs quote this
-// table; library.test.mjs asserts every number in it still comes out of the shipped rows,
-// so a re-bake that quietly loses difficulty shows up as a changed band instead of a lie.
+// table; tools/audit-lots.mjs re-derives the tier min/max from the rows and the `@boot`
+// scenario recomputes the whole sentence off `window.hitori.lots` in the page, so a re-bake
+// that quietly loses difficulty shows up as a changed band instead of a lie.
 export function stats() {
   const byTier = {};
   for (const l of prepared) {

@@ -14,7 +14,8 @@ npm start                 # http://127.0.0.1:5256/  零依赖静态服务器
 npm run check             # 每个源文件 node --check + 九个浏览器场景体能否解析
 npm test                  # 5 个 node 套件，66 条断言（引擎层）
 npm run bake              # 重新出题：生成 → 三条复核 → 写 js/data/lots.js
-npm run audit             # 只核已发布的 40 盘：唯一解、复核强度、负荷、档级文案
+npm run audit             # 只核已发布的 40 盘：唯一解、复核强度、负荷分布、档级文案
+npm run loads             # 生成器能产出哪些负荷：4 档 × 3000 个种子的直方图（约 20s）
 bash tools/verify.sh      # 门禁：node 套件 + 一个真 headless Chrome 跑 9 个场景、196 条断言
 ```
 
@@ -23,6 +24,7 @@ bash tools/verify.sh      # 门禁：node 套件 + 一个真 headless Chrome 跑
 ```bash
 SCENARIOS="pointer" bash tools/verify.sh                       # 只跑一个场景
 SKIP_UNIT=1 SCENARIOS="boot" bash tools/verify.sh              # 只跑浏览器
+CDP_PORT=9367 bash tools/verify.sh                             # 9365 被占时换到自己的空闲口
 BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署产物跑同一套断言
 ```
 
@@ -85,19 +87,59 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 
 `node tools/bake.mjs` 的报告（本机，2026-09-27，40 盘写盘与上一次烘焙逐字节相同）：
 
-| 档 | n | 出题种子数 | 唯一解率 | 落进 band | 独立复核耗时 |
-| --- | --- | --- | --- | --- | --- |
-| 一隅 nook | 4×4 | 34 | 100.0% | 29.4% | ≤ 11 ms |
-| 静室 quiet | 4×4 | 15 | 100.0% | 66.7% | ≤ 2 ms |
-| 书房 study | 5×5 | 38 | 100.0% | 26.3% | ≤ 36 ms |
-| 隐修 retreat | 6×6 | 113 | 100.0% | **8.8%** | ≤ 49 ms |
+| 档 | n | 出题种子数 | 唯一解率 | 落进 band | 出货的负荷 | 独立复核耗时 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 一隅 nook | 4×4 | 34 | 100.0% | 29.4% | `0 ×10 盘` | ≤ 11 ms |
+| 静室 quiet | 4×4 | 15 | 100.0% | 66.7% | `2 ×10 盘` | ≤ 2 ms |
+| 书房 study | 5×5 | 38 | 100.0% | 26.3% | `4 ×10 盘` | ≤ 36 ms |
+| 隐修 retreat | 6×6 | 113 | 100.0% | **8.8%** | `6 ×9 盘 · 10 ×1 盘` | ≤ 49 ms |
 
-`隐修` 那 8.8% 是这架梯子真正的成本：6×6 上一半以上的盘要么枯竭不够（`too-easy: 103`），
-要么掉出 `load 6-10` 之外，要试 113 个种子才凑得够 10 盘。唯一解率四档都是 100%，
+「落进 band」这一列是**每个档要试多少个种子才凑得够 10 盘**：分子恒为 10（`PER_TIER`），
+分母是抽到第 10 盘为止的种子数，所以 8.8% 读作「113 次才凑够 10 盘」，不是「113 盘里 10 盘能用」。
+`隐修` 那 8.8% 是这架梯子真正的成本：`npm run loads` 在 3000 个种子里量到 2707 个 `too-easy`
+（90.2% 的 6×6 盘枯竭不够），落进 band 的只有 287 盘。唯一解率四档都是 100%，
 因为没过第 1、3 关的盘根本不会进候选。
 
-墙上时间只进报告，不进数据行：`js/data/lots.js` 里没有任何 `ms` 字段，两次 bake 的产物逐字节相同
-（`md5 js/data/lots.js` 前后一致），否则换台机器重新烘焙就会把仓库弄脏。
+**出货负荷那一列是多重集，不是区间。** 上一版这里写的是 `6-10`，而 10 盘里 9 盘是 6、
+只有 1 盘是 10——一个区间把「这一档最难的一盘」说成了「这一档的难度范围」。同一句话也印在选档卡片
+和货架标题上（`js/data/lots.js` 的 `blurb`），所以现在三处都写盘数：
+
+```
+6×6 · 枯竭 3 次 ×9 盘 · 5 次 ×1 盘 · 假设 3 层 ×9 盘 · 5 层 ×1 盘
+```
+
+规则是「每个值带着自己的盘数，永远不写 min-max」，由 `js/core/library.js` 的 `spreadText()` 渲染，
+`tools/bake.mjs` 自己另写一遍生成 `blurb`，`tools/audit-lots.mjs` 拿行重算并逐字比对，
+`@boot` 与 `@taps` 再在页面里从 `window.hitori.lots` 独立重算第三次——
+两种写法必须拼出同一个字符串，而且打印出来的盘数加起来必须等于这一档真实存在的盘数
+（`@boot` 断言 `×N 盘` 之和 `=== rows`，否则「写了 9+2 盘却只有 10 盘」也能蒙过子串检查）。
+
+`node tools/load-audit.mjs` 量的是生成器**能**产出哪些负荷，不看 band 收不收（4 档 × 3000 个种子，
+11 893 盘有负荷读数）：
+
+| 档 | band | 实测到的负荷（`值×盘数`） |
+| --- | --- | --- |
+| nook | 0..0 | `0×690 2×1549 4×597 5×2 6×134 8×11` |
+| quiet | 2..2 | `0×655 2×1521 4×614 5×2 6×141 8×14 10×1` |
+| study | 4..5 | `0×666 2×1607 4×523 5×4 6×134 7×1 8×27 10×5 11×1` |
+| retreat | 6..12 | `0×605 2×1501 4×601 6×204 7×2 8×56 9×1 10×22 11×1 12×1` |
+
+三条要如实说的读法：
+
+- **band 的上界基本是装饰。** `隐修` 落进 band 的 287/3000 盘里，6 : 7 : 8 : 9 : 10 : 11 : 12 =
+  204 : 2 : 56 : 1 : 22 : 1 : 1——抽到 10 盘就停的出货器，交付的就是负荷 6（出货 9/10 盘都是 6）。
+  `书房` 的 5 也是同一件事：3000 个种子里有 4 盘负荷 5，而烘焙试的 38 个种子里一盘都没碰到，
+  于是出货 10 盘全是 4。生成器没有「越难越优先」的机制，band 写多宽都不改变采样率。
+- **负荷几乎恒等于 2 × 枯竭。** 11 893 盘里奇数负荷只有 14 盘，落进 band 的盘里「假设 ≠ 枯竭」
+  的正好是那 8 盘（`书房` 4 盘 + `隐修` 4 盘，都是 假设 2 · 枯竭 3 这一类）。
+  `load = 枯竭 + 假设` 是两个读数之和，把它拆开打印仍然有意义，只是别把它读成两个独立指标。
+- **九成 6×6 的盘是「枯竭不够」。** `隐修` 的 3000 个种子里 `too-easy` 占 2707，
+  这就是上面那行「落进 band 8.8%」的另一面。
+- **`npm run loads` 会红**：如果出货 40 盘里某个负荷值在同档 3000 个种子里一次都量不到，
+  说明数据文件和这架梯子已经不是同一个游戏了。
+
+墙上时间只进报告，不进数据行：`js/data/lots.js` 里没有任何 `ms` 字段，两次 bake 的行区逐字节相同
+（`diff <(sed -n '/export const LOTS/,$p' …)` 前后一致），否则换台机器重新烘焙就会把仓库弄脏。
 
 ## 门禁
 
@@ -107,8 +149,13 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
    **引擎红着就不启动浏览器**。
 2. `node tools/playtest.mjs selftest`：把九个场景体逐个 `new Function()` 解析一遍。
    场景体是字符串形式的页面代码，一个未转义的引号会伪装成「页面没起来」，所以这一关在启动 Chrome 之前。
-3. 起一个本仓静态服务器 + 一个 headless Chrome（独立临时 profile，CDP 9365），
-   预检先证明被测字节确实是本仓的 `index.html`，再等 `window.hitori` 出现。
+3. 起一个本仓静态服务器 + 一个 headless Chrome（独立临时 profile，CDP 9365）。
+   起跑前先量端口归属：`:9365` 上已经有人应答 DevTools 就直接退出码 2，而不是拿**别人**的浏览器
+   跑完 196 条再报绿——这一条是这次加的，因为一次泄漏的 headless Chrome 让预检在毫秒级就"通过"，
+   于是服务器还没 `listen()` 就被 curl，红灯写成了一句假的「nothing served」。跑 `BASE_URL` 形态时
+   这一条照样量（脚本仍然起自己的 Chrome），`:5256` 那条只在本地量。
+   预检随后证明被测字节确实是本仓的 `index.html`（失败时把本次服务器写的日志和监听者一起打出来），
+   再等 `window.hitori` 出现。
 4. 九个场景各跑一遍，只认驱动最后一行的 `RESULT <json>`；没有 `RESULT` 等于「没跑」，不算绿。
    控制台脏（`[EXCEPTION]` / error / warning）也算红，即使断言全过。
 5. 收尾证明它自己没留东西：Chrome 退出、临时 profile 删除，否则算红。
@@ -128,15 +175,17 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 合计 196 条浏览器断言 + 66 条引擎断言。`@pointer` 全部由 Chrome 生成的输入事件驱动，
 不调 `window.hitori` 的方法，所以它测的是 `js/view.js` 的指针-格子接线和 CSS 给的命中盒。
 
-**URL 形态**：门禁要跑两遍，因为生产是 Pages 的 `/<repo>/` 前缀形态。
+**URL 形态**：门禁要跑三遍，因为生产是 Pages 的 `/<repo>/` 前缀形态，而前缀形态是最容易悄悄坏掉的那个。
 
 ```bash
-bash tools/verify.sh                                                    # 根形态
-BASE_URL=http://127.0.0.1:5257/z-biz-game-hitori-cos/ bash tools/verify.sh  # 前缀形态
+bash tools/verify.sh                                                       # 根形态
+BASE_URL=http://127.0.0.1:5257/z-biz-game-hitori-cos/ bash tools/verify.sh # Pages 的前缀形态
+BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.sh  # 已上线的产物
 ```
 
 前缀形态用一个把仓库放到 `/z-biz-game-hitori-cos/` 路径下的静态服务器跑
-（`server.cjs` 会把目录 URL 解析到该目录的 `index.html`，和 Pages 一致）。两种形态各 196 条。
+（`server.cjs` 会把目录 URL 解析到该目录的 `index.html`，和 Pages 一致）。三种形态各 196 条；
+第三种跑的是线上字节，所以只能在部署落地之后跑——push 之前先跑前两种，push 之后再跑第三种。
 
 ## 目录
 
@@ -149,13 +198,14 @@ js/core/solve.js      不回溯的铅笔路：facts() + propagate()，也是提�
 js/core/make.js       生成器：种解、删数字、量难度（只在构建期跑）
 js/core/brute.js      第二套独立代码：全枚举与抽样（只在构建期和测试里跑）
 js/core/game.js       一局的状态机：tap / undo / reset / minTaps / grade 的原料
-js/core/library.js    战役顺序、随机一盘、今日一题、统计
+js/core/library.js    战役顺序、随机一盘、今日一题、统计、难度句子的拼法（spreadText）
 js/core/storage.js    一个 localStorage 键，带 localStorage 会抛异常的防护
 js/data/lots.js       40 盘烘焙产物：题面、解、实测难度、复核方式
 js/view.js            canvas 渲染、命中、提示环、减少动态效果
 js/main.js            路由、面板、胜利卡、键盘层、window.hitori 测试桥
 tools/bake.mjs        出题管线（三条复核 + 报告）
 tools/audit-lots.mjs  已发布 40 盘的独立核对（无浏览器，CI 用）
+tools/load-audit.mjs  负荷能从哪儿被生成出来：band 内外的直方图 + 出货值的可达性（会红）
 tools/harness.mjs     node 套件的断言小工具
 tools/playtest.mjs    CDP 驱动 + 九个场景 + 页面侧第二意见（CF_BODY）
 tools/verify.sh       一条命令一个结论

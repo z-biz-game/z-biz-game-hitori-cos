@@ -169,17 +169,24 @@ for (const tier of TIERS) {
 
 // The band the UI prints is measured off the boards that actually shipped, never copied
 // from the generator's wish list — so a re-bake that lands lighter or heavier says so.
-// `min`/`max` are the *load* range (枯竭 + 深度, the key `campaign()` walks), and the
-// shelf heading that renders `blurb` has to name the same thing the menu does: 枯竭 is
+// `min`/`max` are the *load* range (枯竭 + 深度, the key `campaign()` walks).
+// The shelf heading that renders `blurb` has to name the same thing the menu does: 枯竭 is
 // `guesses`, not `load`. Printing load under the words 枯竭 N 次 is how the shelf ended up
 // claiming 6-10 assumptions on rows the counter measures at 3.
+// `dist` is written here rather than imported from js/core/library.js on purpose: library.js
+// reads the file this script is about to write, and the two spellings of the same sentence are
+// compared by tools/audit-lots.mjs, so a drift between them is a red gate, not a shared bug.
+const dist = (rows, key, unit, suffix) => {
+  const c = new Map();
+  for (const r of rows) c.set(r[key], (c.get(r[key]) || 0) + 1);
+  const parts = [...c.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([v, n]) => `${v}${suffix ? ` ${suffix}` : ''} ×${n} 盘`);
+  return `${unit} ${parts.join(' · ')}`;
+};
 const meta = TIERS.map((t) => {
   const mine = out.filter((l) => l.tier === t.key);
   const loads = mine.map((l) => l.load);
-  const span = (key) => {
-    const v = mine.map((l) => l[key]);
-    return Math.min(...v) === Math.max(...v) ? `${Math.min(...v)}` : `${Math.min(...v)}-${Math.max(...v)}`;
-  };
   const lo = Math.min(...loads);
   const hi = Math.max(...loads);
   const size = mine[0].n;
@@ -189,7 +196,7 @@ const meta = TIERS.map((t) => {
     n: size,
     min: lo,
     max: hi,
-    blurb: `${size}×${size} · 枯竭 ${span('guesses')} 次 · 假设 ${span('depth')} 层`,
+    blurb: `${size}×${size} · ${dist(mine, 'guesses', '枯竭', '次')} · ${dist(mine, 'depth', '假设', '层')}`,
   };
 });
 
@@ -198,8 +205,10 @@ const lines = [
   '// Each row carries the unique-solution count, the assumption depth and the number of',
   '// times pure deduction ran dry, all three produced by js/core/solve.js and re-checked',
   '// against the independent route in js/core/brute.js. Re-run `node tools/bake.mjs`',
-  '// instead of hand-editing: test/library.test.mjs re-solves every row and fails if a',
-  '// line and its numbers ever disagree.',
+  '// instead of hand-editing: tools/audit-lots.mjs re-derives every number on a row — and the',
+  '// tier blurb, which names the board count for each difficulty value — from the rows',
+  '// themselves, and test/brute.test.mjs re-proves all 40 boards by the second route, so a',
+  '// line and its numbers ever disagreeing is a red gate.',
   `export const TIERS_META = ${JSON.stringify(meta)};`,
   'export const LOTS = [',
   ...out.map((l) => `  ${JSON.stringify(l)},`),

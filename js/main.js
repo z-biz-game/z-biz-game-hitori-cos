@@ -30,7 +30,7 @@ import {
 } from './core/game.js';
 import { MUST_OPEN, MUST_SHADED, UNKNOWN, facts, propagate } from './core/solve.js';
 import {
-  ALL, TIERS, byId, campaign, dailyLot, levelAt, lotsIn, randomLot, stats as poolStats,
+  ALL, TIERS, byId, campaign, dailyLot, levelAt, lotsIn, randomLot, spreadText, stats as poolStats,
 } from './core/library.js';
 import { store } from './core/storage.js';
 import { todayKey } from './core/rng.js';
@@ -608,18 +608,17 @@ function renderMenu() {
     // `t.blurb` is core data and it prints this tier's *load* range under the words 枯竭 N 次.
     // That is not what the number measures, so the menu recomputes both from the shipped rows and
     // labels each for what it is: 枯竭 = how many times js/core/solve.js had to assume on the
-    // tier's easiest/hardest row, 负荷 = 枯竭 + 深度 (the sort key `campaign()` walks).
+    // tier's rows, 负荷 = 枯竭 + 深度 (the sort key `campaign()` walks). Each value is printed with
+    // the number of boards carrying it, because a tier whose rows are not uniform does not get to
+    // advertise a range: 隐修 shipped nine boards at 枯竭 3 and one at 5.
     const gs = lots.map((l) => l.guesses);
     const ds = lots.map((l) => l.depth);
-    const span = (a, unit, suffix) => (Math.min(...a) === Math.max(...a)
-      ? `${unit} ${Math.min(...a)} ${suffix}`
-      : `${unit} ${Math.min(...a)}-${Math.max(...a)} ${suffix}`);
     const mine = resume && lots.some((l) => l.id === resume.id)
       ? `<p class="resume">上次没下完：<a href="#/lot/${resume.id}">${resume.id}</a> · 盘上已经记了 ${resume.marks.filter((m) => m !== OPEN).length} 个记号</p>`
       : '';
     return `<div class="tier">
       <h3>${t.label}<span>${t.key} · ${t.n}×${t.n}</span></h3>
-      <p class="blurb"><b>${span(gs, '枯竭', '次')} · ${span(ds, '假设', '层')}</b> · 负荷 ${st.min}-${st.max}（枯竭+深度） · 黑 ${st.shadesMin}-${st.shadesMax} 格 · 题面相等对 ${st.pairsMin}-${st.pairsMax} 对 · 搜索节点 ≤ ${st.nodesMax}</p>
+      <p class="blurb"><b>${spreadText(gs, '枯竭', '次')} · ${spreadText(ds, '假设', '层')}</b> · ${spreadText(lots.map((l) => l.load), '负荷')}（枯竭+深度） · 黑 ${st.shadesMin}-${st.shadesMax} 格 · 题面相等对 ${st.pairsMin}-${st.pairsMax} 对 · 搜索节点 ≤ ${st.nodesMax}</p>
       <div class="lots">${lots.map((l) => lotChip(l)).join('')}</div>
       ${mine}
     </div>`;

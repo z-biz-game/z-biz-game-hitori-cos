@@ -9,7 +9,7 @@ import { LOTS, TIERS_META } from '../js/data/lots.js';
 import { validatePuzzle, duplicatePairs } from '../js/core/grid.js';
 import { shadingIsValid } from '../js/core/rules.js';
 import { minTaps } from '../js/core/game.js';
-import { campaign } from '../js/core/library.js';
+import { campaign, spreadText } from '../js/core/library.js';
 
 const bad = [];
 const fail = (id, msg) => bad.push(`${id}: ${msg}`);
@@ -17,12 +17,6 @@ const fail = (id, msg) => bad.push(`${id}: ${msg}`);
 // A 4x4 has 65536 subsets: at that size the independent route enumerates the whole space, and
 // above it samples. The claim is per-tier, so the check has to be per-row.
 const FULL_SUBSETS = { 4: 2 ** 16 };
-
-const span = (list, unit, suffix) => {
-  const lo = Math.min(...list);
-  const hi = Math.max(...list);
-  return lo === hi ? `${unit} ${lo} ${suffix}` : `${unit} ${lo}-${hi} ${suffix}`;
-};
 
 const byTier = {};
 for (const row of LOTS) {
@@ -67,8 +61,11 @@ for (const t of TIERS_META) {
   }
   // The blurb is the sentence the menu prints. It used to quote the *load* span under the word
   // 枯竭, which is one of the two numbers it adds up to — so it is recomputed here and compared
-  // as a string, not eyeballed.
-  const want = `${t.n}×${t.n} · ${span(rows.map((r) => r.guesses), '枯竭', '次')} · ${span(rows.map((r) => r.depth), '假设', '层')}`;
+  // as a string, not eyeballed. It also used to print 枯竭 3-5 次 for a tier that shipped nine
+  // boards at 3 and one at 5, so the sentence now carries a board count per value and is
+  // recomputed with the very function the page renders with (js/core/library.js:spreadText):
+  // bake.mjs spells the same sentence a second time, and the two spellings agreeing is the gate.
+  const want = `${t.n}×${t.n} · ${spreadText(rows.map((r) => r.guesses), '枯竭', '次')} · ${spreadText(rows.map((r) => r.depth), '假设', '层')}`;
   if (t.blurb !== want) fail(t.key, `blurb 说的是「${t.blurb}」，从行上重算是「${want}」`);
 }
 
@@ -88,10 +85,12 @@ for (const row of campaign()) {
 
 const head = TIERS_META.map((t) => {
   const rows = byTier[t.key] || [];
-  const loads = rows.map((r) => r.load);
+  // The summary line prints the multiset, not a min/max: `负荷 6-10` was the same
+  // one-board-span reading that the menu used to ship.
+  const loads = spreadText(rows.map((r) => r.load), '负荷');
   const mode = [...new Set(rows.map((r) => r.brute && r.brute.mode))].join('/') || '-';
   const sub = rows.map((r) => (r.brute ? r.brute.subsets : 0));
-  return `${t.key.padEnd(8)} n=${rows.length} ${t.n}×${t.n} 负荷 ${Math.min(...loads)}-${Math.max(...loads)} 复核=${mode} 子集 ${Math.min(...sub)}-${Math.max(...sub)}`;
+  return `${t.key.padEnd(8)} n=${rows.length} ${t.n}×${t.n} ${loads}（${Math.min(...rows.map((r) => r.load))}-${Math.max(...rows.map((r) => r.load))}） 复核=${mode} 子集 ${Math.min(...sub)}-${Math.max(...sub)}`;
 }).join('\n');
 
 console.log(head);
