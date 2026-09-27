@@ -1,0 +1,42 @@
+{
+  "name": "z-biz-game-hitori-cos",
+  "version": "1.0.0",
+  "description": "一乘 · 抽刀断水 HITORI — 浏览器原生 hitori，零依赖、零打包器、一次点击一个状态。零猜测 hitori 推理：唯一解由第二套独立代码逐格复核，难度是量出来的不是形容词。",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node server.cjs 5256",
+    "serve": "node server.cjs",
+    "dev": "node server.cjs 5256",
+    "electron": "electron .",
+    "bake": "node tools/bake.mjs",
+    "audit": "node tools/audit-lots.mjs",
+    "check": "for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done && node tools/playtest.mjs selftest && echo OK",
+    "test": "node --test test/",
+    "unit": "for f in test/*.test.mjs; do echo \"--- $f\"; node \"$f\" || exit 1; done",
+    "verify": "bash tools/verify.sh"
+  },
+  "keywords": [
+    "game",
+    "puzzle",
+    "hitori",
+    "hitori-ni-shite",
+    "unique-solution",
+    "zero-guessing",
+    "retrograde-free",
+    "exhaustive-cross-check",
+    "zero-dependency",
+    "electron"
+  ],
+  "author": "z-biz-game",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "build": {
+    "appId": "com.zbiz.hitori",
+    "productName": "HITORI",
+    "mac": { "category": "public.app-category.puzzle-games" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}

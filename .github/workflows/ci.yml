@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: syntax + engine guarantees
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No npm install: the game has zero runtime dependencies, and pulling Electron into CI to
+      # prove nothing is how a repo starts failing on a network flake.
+      - name: Syntax check every source
+        run: |
+          for f in $(git ls-files 'js/*.js' 'js/*/*.js'); do node --check "$f" || exit 1; done
+          node --check server.cjs
+          node --check electron/main.cjs
+          for f in $(git ls-files 'tools/*.mjs' 'test/*.mjs'); do node --check "$f" || exit 1; done
+
+      # The engine suites: three rule checkers that must agree cell by cell, the pencil route,
+      # the state machine and the generator's own accounting.
+      - name: Engine tests
+        run: npm test
+
+      # The browser scenarios are strings of page code handed to CDP. One unescaped quote inside
+      # one of them reads as "the page never booted", so the parse gate runs before anything else
+      # that could be misread that way.
+      - name: Browser scenario bodies parse
+        run: node tools/playtest.mjs selftest
+
+      # The shipped pool has to be reproducible, not just present: re-baking on a different machine
+      # must produce the same bytes, or `js/data/lots.js` is a snapshot of one laptop rather than
+      # the game's content. Costs under a second.
+      - name: Baked pool is reproducible
+        run: |
+          node tools/bake.mjs > /tmp/bake.log 2>&1
+          git --no-pager diff --stat -- js/data/lots.js
+          git diff --quiet -- js/data/lots.js || {
+            echo "js/data/lots.js changed when re-baked — the shipped rows are not reproducible" >&2
+            git --no-pager diff -- js/data/lots.js | head -40
+            exit 1
+          }
+
+      # Every board must still carry solutionCount === 1 and a cross-check whose strength matches
+      # its size (4x4 exhaustive, 5x5+ sampled) — the claim the README makes about the pool.
+      - name: Shipped rows prove what they say
+        run: node tools/audit-lots.mjs
+
+      - name: Entry files exist
+        run: test -f index.html && grep -q '<canvas' index.html && grep -q 'js/main.js' index.html

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<meta name="description" content="一乘 · 抽刀断水 Hitori：一次点击换三个状态，每行每列不许留下两个相等的未涂数字，黑格不许相邻，未涂格必须连成一片。题库里每一盘的解数都是烘焙时由两套互不相干的代码逐格复核过的，难度那一栏印的是实测的「推理枯竭次数」。">
+<link rel="icon" href="data:,">
+<title>一乘 · 抽刀断水 HITORI</title>
+<link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+<header class="topbar">
+  <h1 class="brand"><button type="button" class="brand-mark" id="home" title="回到目录">一</button>一乘<small>抽刀断水 · HITORI</small></h1>
+  <nav class="modes" id="modes" aria-label="模式">
+    <button type="button" data-route="menu" id="nav-menu">目录</button>
+    <button type="button" data-route="campaign" id="nav-campaign">战役</button>
+    <button type="button" data-route="daily" id="nav-daily">今日一题</button>
+    <button type="button" data-route="random" id="nav-random">随机</button>
+  </nav>
+  <p class="totals" id="totals"></p>
+</header>
+
+<main class="stage">
+  <!-- 目录：四段烘焙难度 + 战役 + 今日一题 + 随机。菜单上不算规则，只印烘焙时量好的数。 -->
+  <section class="menu" id="menu" aria-label="选一盘">
+    <div class="menu-head">
+      <h2>四段难度 · <span id="menu-count"></span></h2>
+      <p class="menu-note" id="menu-note"></p>
+    </div>
+    <div class="tiers" id="tiers"></div>
+    <div class="menu-actions">
+      <button type="button" id="menu-campaign" class="primary">继续战役</button>
+      <button type="button" id="menu-daily">今日一题</button>
+      <button type="button" id="menu-random">随机一盘</button>
+    </div>
+    <p class="menu-blurb">「枯竭 N 次」不是形容词：N 是 <code>js/core/solve.js</code> 在这一盘的题面上，纯推理走到走不动、
+      不得不<em>假设</em>一次的次数。0 次就是全程不用猜。40 盘的解数每盘都由 <code>js/core/brute.js</code>
+      的第二套独立代码逐格复核过（4×4 是全部 65,536 个子集），两套说不同就不发布。</p>
+  </section>
+
+  <section class="board" id="table" hidden>
+    <canvas id="board" tabindex="0" aria-label="抽刀断水棋盘：一次点击在 未涂 / 涂黑 / 打点 之间循环"></canvas>
+    <p class="hint-line" id="hintline"></p>
+    <div class="curtain" id="curtain" hidden>
+      <div class="curtain-card">
+        <p class="stars" id="stars"></p>
+        <h2 id="verdict"></h2>
+        <p class="tally" id="tally"></p>
+        <div class="curtain-actions">
+          <button type="button" id="again">再来一次</button>
+          <button type="button" id="next" class="primary">下一盘</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel" id="panel" hidden>
+    <p class="crumbs" id="crumbs"></p>
+    <dl class="readout" id="readout"></dl>
+    <ol class="rules" id="rules" aria-label="三条规则">
+      <li data-rule="1">每行每列不得出现两个相等的<b>未涂</b>数字</li>
+      <li data-rule="2">任意两个涂黑格不得正交相邻</li>
+      <li data-rule="3">所有未涂格正交连通</li>
+    </ol>
+    <div class="controls">
+      <button type="button" id="undo">回退一步</button>
+      <button type="button" id="hint">提示这一格</button>
+      <button type="button" id="restart">重开</button>
+      <button type="button" id="share">分享</button>
+      <button type="button" id="back">目录</button>
+    </div>
+    <div class="shelf" id="shelf"></div>
+    <details class="about">
+      <summary>这一盘的数字从哪来</summary>
+      <p>屏幕上每个数都是从盘面读出来的，不是估的：<b>黑数 / 打点 / 未定 / 冲突 / 连通</b> 全部出自
+        <code>rules.audit()</code>，<b>最佳</b> 是 <code>game.minTaps(lot)</code>——「一个黑格一下、一个点两下」的地板价，
+        由该盘自己黑几个格子算出。冲突三色各自对应上面那条编号的规则：一条规则一个颜色，不共用。</p>
+      <p>点「提示这一格」时，页面跑的是 <code>js/core/solve.js</code> 里那条<em>不回溯</em>的铅笔路
+        （<code>facts()</code> + <code>propagate()</code>）在<b>你当前盘面</b>上的下一步：它说得出这一格是被
+        <b>哪一条规则</b>逼住的。它从不读 <code>js/data/lots.js</code> 里烘焙的答案，也不会替你把假设往下推——
+        推理枯竭之后要做的那个假设，永远留给你。</p>
+      <p>题库来自 <code>tools/bake.mjs</code>：构建期跑生成器 <code>js/core/make.js</code>，只收下三条独立复核都点头的盘面——
+        生成器自己的<em>完整</em>枚举报 <code>solutionCount === 1</code>；把序列化之后的这一盘重解一遍，
+        <code>solutionCount / depth / guesses</code> 三个数字必须一字不差地复现；最后由另一套写法的
+        <code>brute.js</code> 独立再核一次——4×4 的两档是<b>全枚举</b>（65536 个格子子集），5×5 与 6×6 是
+        <b>抽样</b>（每盘 2 万+ 子集），<code>mode</code> 与 <code>subsets</code> 就记在每一盘的数据行上，不藏着。
+        浏览器不生成、不搜索、不回溯：<code>make.js</code> 与 <code>brute.js</code> 不被任何页面文件 import。
+        进度与纪录只存在这台设备的浏览器里。<button type="button" id="wipe">清空存档</button></p>
+    </details>
+  </aside>
+</main>
+
+<p class="toast" id="toast" hidden></p>
+<footer class="foot">
+  <p>这页是不是真的能点，不由人说了算：跑 <code>bash tools/verify.sh</code>。它在 <code>:5256</code> 起本仓的静态服务，
+    用无头 Chrome（DevTools <code>:9365</code>）真按鼠标走完九段场景——三状态点击、三条规则各自变红再被修好、
+    回退、重开、点认证解赢下来、<em>非法的完成盘赢不了</em>、刷新后续上、纪录落盘、减少动效、像素对账。
+    退出码 0 才算过。</p>
+</footer>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
