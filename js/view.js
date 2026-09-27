@@ -99,15 +99,15 @@ export function createView(canvas, handlers = {}) {
 
   function measureBox() {
     const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-    // 同值就不写：`style.height` 与 `canvas.width/height` 的赋值都会改变被 ResizeObserver 观察的那个
-    // 盒子，于是回调再进一次自己——忙一点的机器上 Chrome 直接报
-    // "ResizeObserver loop completed with undelivered notifications."，页面的错误采集器把它算成一次
-    // throw，浏览器闸就红（GitHub runner 上实测红过 9 条，本机永远复现不出来）。
-    // 跳过赋值不会留下残影：draw() 在 measureBox() 之后显式 clearRect。
-    const styleH = `${cssH}px`;
+    // 显示盒子的"方"交给 CSS（`#board { width:100%; aspect-ratio:1/1 }`），这里只写位图尺寸。
+    // 原来的 `canvas.style.height = ...` 是在 ResizeObserver 的回调里去改它自己观察的那个盒子：
+    // 回调 → 盒子变 → 回调再进一次，Chromium 对这种"一帧内消化不完"的回路抛一条
+    // "ResizeObserver loop completed with undelivered notifications."，它经 window 的 error 事件
+    // 进入 js/main.js:909 的采集器，于是 `nothing threw` 那批断言在 GitHub runner 上红了 9 条
+    // （本机 900×860 永远复现不出来——同一条 notice 只在忙机器上出现）。
+    // 位图同值也跳过赋值：同值写入照样清空位图并重置上下文，而 draw() 之后有显式 clearRect。
     const bw = Math.round(cssW * dpr);
     const bh = Math.round(cssH * dpr);
-    if (canvas.style.height !== styleH) canvas.style.height = styleH;
     if (canvas.width !== bw) canvas.width = bw;
     if (canvas.height !== bh) canvas.height = bh;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

@@ -81,7 +81,12 @@ code { color: var(--pick); }
 .menu-blurb em { color: var(--ink); font-style: normal; }
 
 .board { position: relative; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
-#board { display: block; width: 100%; height: auto; touch-action: manipulation; cursor: pointer; border-radius: 6px; }
+/* 方盘的"方"由 CSS 定死：宽度跟着容器，高度用 aspect-ratio 锁成 1:1。
+   以前这里靠 JS 写 `canvas.style.height`，而 ResizeObserver 观察的正是这个盒子——回调改自己
+   观察的盒子，Chromium 就要多跑一轮投递，忙一点的机器上直接报
+   "ResizeObserver loop completed with undelivered notifications."（GitHub runner 上实测红过）。
+   位图尺寸由 JS 设，显示盒子由 CSS 设，两边不再互相触发。 */
+#board { display: block; width: 100%; aspect-ratio: 1 / 1; touch-action: manipulation; cursor: pointer; border-radius: 6px; }
 #board[hidden] { display: none; }
 .hint-line { margin: 6px 2px 0; min-height: 22px; color: var(--ink-dim); font-size: 13px; }
 .hint-line b { color: var(--ink); }
