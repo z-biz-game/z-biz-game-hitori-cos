@@ -57,6 +57,20 @@ test('every asset path index.html references exists on disk', () => {
   }
 });
 
+test('every bitmap the stylesheet paints is on disk', () => {
+  // css/game.css 引用的三张纹理是盘面/牌面的底：路径写错在浏览器里只是安静地没有图，
+  // 而 SW 又会把 404 缓存成"这条没缓存"，所以这条必须在 node 里红。
+  const css = fs.readFileSync(path.join(ROOT, 'css/game.css'), 'utf8');
+  const refs = [...css.matchAll(/url\(['\"]?([^'\")]+\.(?:png|jpg|webp|svg))['\"]?\)/gi)].map((m) => m[1]);
+  assert.ok(refs.length >= 3, `样式表一张位图都没引用（找到 ${refs.length} 张）`);
+  for (const ref of refs) {
+    const fromCss = path.resolve(path.join(ROOT, 'css'), ref);
+    const fromRoot = path.resolve(ROOT, ref);
+    assert.ok(fs.existsSync(fromCss) || fs.existsSync(fromRoot), `css/game.css 引用 ${ref}，盘上没有`);
+    if (/\.png$/i.test(ref)) ihdr(fs.existsSync(fromCss) ? fromCss : fromRoot);
+  }
+});
+
 test('manifest icons are real PNGs whose declared sizes match their IHDR', () => {
   const file = path.join(ROOT, 'manifest.webmanifest');
   assert.ok(fs.existsSync(file), '没有 manifest.webmanifest');

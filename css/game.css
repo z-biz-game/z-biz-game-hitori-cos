@@ -106,7 +106,9 @@ button, summary { display: inline-flex; align-items: center; gap: 6px; padding: 
 .menu-blurb { margin: 0; padding: 10px 12px; border-left: 2px solid var(--line); color: var(--ink-dim); font-size: 12px; }
 .menu-blurb em { color: var(--ink); font-style: normal; }
 
-.board { position: relative; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+/* 生成的纹理接到 DOM 这一层：画布像素一个都不动（CI 的浏览器闸是按单元格采样断言规则色的，
+   而本机不许起 Chrome 复验），所以桌纹垫盘框、水纹垫胜利牌、纸纹垫说明牌。 */
+.board { position: relative; background: var(--bg-2) url('../assets/img/board-table.png') center / 340px repeat; border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
 /* 方盘的"方"由 CSS 定死：宽度跟着容器，高度用 aspect-ratio 锁成 1:1。
    以前这里靠 JS 写 `canvas.style.height`，而 ResizeObserver 观察的正是这个盒子——回调改自己
    观察的盒子，Chromium 就要多跑一轮投递，忙一点的机器上直接报
@@ -120,7 +122,8 @@ button, summary { display: inline-flex; align-items: center; gap: 6px; padding: 
 
 .curtain { position: absolute; inset: 0; display: grid; place-items: center; background: #14161ae6; border-radius: 10px; }
 .curtain[hidden] { display: none; }
-.curtain-card { text-align: center; padding: 18px 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.curtain-card { text-align: center; padding: 18px 22px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg) url('../assets/img/ripple.png') center bottom / 300px no-repeat; }
 .stars { margin: 0; color: var(--pick); letter-spacing: .3em; font-size: 20px; }
 .curtain-card h2 { margin: 6px 0 4px; font-size: 18px; }
 .tally { margin: 0 0 12px; color: var(--ink-dim); font-size: 13px; }
@@ -184,7 +187,7 @@ dd.dim { color: var(--ink-dim); }
 .modal { position: fixed; inset: 0; display: grid; place-items: center; background: #0c0e11e6; z-index: 5; }
 .modal[hidden] { display: none; }
 .modal-card { max-width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  background: var(--bg) url('../assets/img/tile-paper.png') center / 128px repeat; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .modal-card h2 { margin: 0 0 10px; font-size: 18px; }
 .modal-card .rules { margin: 0 0 10px; }
 .modal-card p { margin: 0 0 12px; color: var(--ink-dim); font-size: 13px; }

@@ -1299,6 +1299,8 @@ window.hitori = {
   layout: () => view.layout(),
   reducedMotion: () => view.reducedMotion(),
   animating: () => view.animating(),
+  // 动画时钟的读数：三档对拍的探针要读的是「这一帧被积分了多少」，不是帧数。
+  pulse: () => view.pulse(),
   go(hash) { location.hash = hash; return { ...session.route }; },
   readout: () => readoutRows().map(([k, v]) => `${k}=${v}`),
   rules: () => Array.from(el.rules.querySelectorAll('li')).map((li) => ({ rule: Number(li.dataset.rule), hit: li.classList.contains('hit'), count: Number(li.dataset.count || 0) })),

@@ -17,6 +17,8 @@
 //     rule colours have to be legible on a light tile *and* on the dark table. The two lists
 //     are asserted against each other by tools/playtest.mjs's @pointer/@motion suites.
 
+import { breath, createPace, phase } from './core/pace.js';
+
 const PAD = 12;
 const MIN_CELL = 26;
 
@@ -60,6 +62,8 @@ function prefersReduced() {
 }
 
 const HINT_MS = 2400;
+// 提示环一次呼吸的长度。相位不再取自绝对时间，而是取自「这环亮了多久」——见 js/core/pace.js。
+const PULSE_MS = 1100;
 
 export function createView(canvas, handlers = {}) {
   // `willReadFrequently` because tools/playtest.mjs reads the bitmap back to prove a tap
@@ -73,6 +77,8 @@ export function createView(canvas, handlers = {}) {
   };
   let geom = { cell: MIN_CELL, x0: 0, y0: 0, w: 240, h: 240 };
   let hintUntil = 0;
+  const pace = createPace();
+  let pulseMs = 0; // 累加的帧间隔：这一环亮了多久，与这一档是 30/60/120Hz 无关
   let raf = 0;
   let hintTimer = 0;
   let cssW = 0;
@@ -234,7 +240,8 @@ export function createView(canvas, handlers = {}) {
 
     if (state.cursor >= 0 && state.cursor < n * n) outline(state.cursor, C.focus, false);
     if (state.hint >= 0 && state.hint < n * n) {
-      const t = prefersReduced() ? 0.5 : ((performance.now() % 1100) / 1100);
+      // 位移只由积分出来的 ms 决定：30Hz 与 120Hz 在同一个墙上时刻必须画出同一个半径。
+      const t = prefersReduced() ? 0.5 : breath(phase(pulseMs, PULSE_MS));
       const grow = (0.12 + t * 0.1) * geom.cell;
       const r = rectOf(state.hint);
       ctx.save();
@@ -254,7 +261,9 @@ export function createView(canvas, handlers = {}) {
     return false;
   }
 
-  function frame() {
+  function frame(ts) {
+    // rAF 给的时间戳与 performance.now() 同原点，所以这里既能吃帧回调也能自己取时。
+    pulseMs = pace.tick(typeof ts === 'number' ? ts : performance.now()).elapsed;
     // Re-arming before deciding left this running forever: `step()` says when the pulse is over,
     // and the loop kept its next frame anyway, so animating() stayed true and a phone paid for
     // frames after the hint had expired. The last draw is not optional either — without it the
@@ -337,6 +346,8 @@ export function createView(canvas, handlers = {}) {
     showHint(i) {
       state.hint = i;
       hintUntil = performance.now() + HINT_MS;
+      pace.reset(); // 相位从这一瞬间的 0 起步：按下提示，环从最小的那颗开始长大
+      pulseMs = 0;
       draw();
       startLoop();
       clearTimeout(hintTimer);
@@ -355,6 +366,8 @@ export function createView(canvas, handlers = {}) {
       clearTimeout(hintTimer);
       hintTimer = 0;
       stopLoop();
+      pace.reset();
+      pulseMs = 0;
       state.hint = -1;
     },
     // What the bitmap actually says about one cell: mean luminance plus the three rule hues.
@@ -399,6 +412,8 @@ export function createView(canvas, handlers = {}) {
       return n;
     },
     animating() { return !!raf; },
+    // 动画时钟本身：闸门要验的是这一帧被积分了还是只被数了一遍。
+    pulse: () => ({ ms: pulseMs, dt: pace.dt, frames: pace.frames, clamped: pace.clamped }),
     reducedMotion: prefersReduced,
     get state() { return state; },
     get size() { return { cssW, cssH, cell: geom.cell }; },
