@@ -36,6 +36,11 @@
     <button type="button" data-route="random" id="nav-random">随机</button>
   </nav>
   <p class="totals" id="totals"></p>
+  <p class="hud">
+    <button type="button" id="sound" aria-pressed="false" title="静音开关（M）">有声</button>
+    <button type="button" id="fullscreen" aria-pressed="false" title="全屏（F）">全屏</button>
+    <button type="button" id="learn" title="玩法与按键（?）">玩法</button>
+  </p>
 </header>
 
 <main class="stage">
@@ -67,6 +72,18 @@
         <div class="curtain-actions">
           <button type="button" id="again">再来一次</button>
           <button type="button" id="next" class="primary">下一盘</button>
+        </div>
+      </div>
+    </div>
+    <!-- 暂停：仿真不走、点击无效、时钟冻住。牌上印的就是冻住的那一刻。 -->
+    <div class="curtain pause" id="pausecard" hidden>
+      <div class="curtain-card">
+        <h2>暂停</h2>
+        <p class="tally">用时停在 <b id="pause-time">00:00</b> · 盘面不会替你往前走</p>
+        <div class="curtain-actions">
+          <button type="button" id="resume" class="primary">继续（P）</button>
+          <button type="button" id="pause-restart">重开</button>
+          <button type="button" id="pause-menu">目录</button>
         </div>
       </div>
     </div>
@@ -107,6 +124,34 @@
     </details>
   </aside>
 </main>
+
+<!-- 玩法说明：一次点开的静牌，规则与按键都在同一张上，不需要读 README 才会玩。 -->
+<div class="modal" id="learn-card" role="dialog" aria-modal="true" aria-labelledby="learn-title" hidden>
+  <div class="modal-card">
+    <h2 id="learn-title">抽刀断水 · 玩法</h2>
+    <ol class="rules">
+      <li>每行每列不得出现两个相等的<b>未涂</b>数字</li>
+      <li>任意两个涂黑格不得正交相邻</li>
+      <li>所有未涂格正交连通</li>
+    </ol>
+    <p>一格一次点击换三个状态：<b>未涂 → 涂黑 → 打点 → 未涂</b>。涂黑是「这个数字被遮住」，
+      打点是「这一格我确定留在盘上」。三条同时满足、且与题库那一盘一致才算赢。</p>
+    <dl class="keys">
+      <dt>Enter / Space</dt><dd>目录里开局；盘上落在选中的那一格</dd>
+      <dt>方向键 / C</dt><dd>选格 / 聚焦棋盘</dd>
+      <dt>P</dt><dd>暂停与继续（时钟跟着冻住）</dd>
+      <dt>R</dt><dd>重开这一盘</dd>
+      <dt>U</dt><dd>回退一步</dd>
+      <dt>H</dt><dd>问这一格被哪条规则逼住</dd>
+      <dt>M</dt><dd>静音开关（真的停掉音频线程）</dd>
+      <dt>F</dt><dd>全屏</dd>
+      <dt>? / Esc</dt><dd>开/关这张说明牌</dd>
+    </dl>
+    <div class="curtain-actions">
+      <button type="button" id="learn-close" class="primary">知道了</button>
+    </div>
+  </div>
+</div>
 
 <p class="toast" id="toast" hidden></p>
 <footer class="foot">

@@ -33,6 +33,7 @@ import {
   ALL, TIERS, byId, campaign, dailyLot, levelAt, lotsIn, randomLot, spreadText, stats as poolStats,
 } from './core/library.js';
 import { cleanResume, store } from './core/storage.js';
+import { createAudio } from './core/audio.js';
 import { todayKey } from './core/rng.js';
 import { LOTS } from './data/lots.js';
 import * as gridCore from './core/grid.js';
@@ -56,7 +57,13 @@ const el = {
   panel: $('panel'), tiers: $('tiers'), menuCount: $('menu-count'), menuNote: $('menu-note'),
   menuCampaign: $('menu-campaign'), menuDaily: $('menu-daily'), menuRandom: $('menu-random'),
   home: $('home'),
+  sound: $('sound'), fullscreen: $('fullscreen'), learn: $('learn'),
+  learnCard: $('learn-card'), learnClose: $('learn-close'),
+  pausecard: $('pausecard'), pauseTime: $('pause-time'), resume: $('resume'),
+  pauseRestart: $('pause-restart'), pauseMenu: $('pause-menu'),
 };
+
+const SETTINGS_KEY = 'hitori.settings.v1';
 
 const session = {
   route: { kind: 'menu' },
@@ -72,6 +79,12 @@ const session = {
   hintMsg: '', // the last question asked of the pencil route; cleared by any change to the board
   resume: null, // { id, marks, taps } when the board on screen came out of the resume key
   doneClock: 0, // the clock stops at the win, so the win card and the readout never disagree
+  paused: false,
+  pauseStarted: 0, // wall clock of the 暂停 press, 0 while unpaused
+  pausedFor: 0, // ms taken out of the clock since the board opened
+  autoPaused: false, // only a tab-we-hid for gets un-hidden by coming back
+  muted: false,
+  settingsDecode: { ok: false, reason: 'none', dropped: 0 },
 };
 const errors = [];
 
@@ -158,6 +171,72 @@ function dropResume() {
   }
 }
 
+// ---------------------------------------------------------------- settings: the mute survives a reload
+
+// The same two-stage decode as the save and the resume slot, for the same reason: this key can be
+// a half-written quota abort, a hand-edited string, or a future build's shape. `muted` is the only
+// field this build owns, and the honest readings are 0/1/false/true/'0'/'1' — anything else costs
+// the setting and nothing else, and is *reported* rather than silently defaulted, so a player who
+// pressed 静音 and got a loud reload has a number a gate can assert on.
+function cleanSettings(p) {
+  if (p === null || p === undefined) return { ok: false, reason: 'empty', dropped: 0, value: { muted: false } };
+  if (typeof p !== 'object' || Array.isArray(p)) return { ok: false, reason: 'not-object', dropped: 1, value: { muted: false } };
+  const m = p.muted;
+  let muted = null;
+  if (m === 0 || m === 1 || m === false || m === true) muted = !!m;
+  else if (m === '0' || m === '1') muted = m === '1';
+  else muted = null;
+  const extra = Object.keys(p).filter((k) => k !== 'muted').length;
+  return {
+    ok: muted !== null,
+    reason: muted === null ? 'bad-muted' : '',
+    dropped: (muted === null ? 1 : 0) + extra,
+    value: { muted: !!muted },
+  };
+}
+
+function readSettings() {
+  if (!rawStore()) {
+    session.settingsDecode = { ok: false, reason: 'no-storage', dropped: 0 };
+    return { muted: false };
+  }
+  let raw = null;
+  try {
+    raw = localStorage.getItem(SETTINGS_KEY);
+  } catch (err) {
+    session.settingsDecode = { ok: false, reason: 'read-threw', dropped: 0 };
+    return { muted: false };
+  }
+  if (!raw) {
+    session.settingsDecode = { ok: false, reason: 'empty', dropped: 0 };
+    return { muted: false };
+  }
+  let p = null;
+  try { // stage one
+    p = JSON.parse(raw);
+  } catch (err) {
+    session.settingsDecode = { ok: false, reason: 'unparsable', dropped: 1 };
+    return { muted: false };
+  }
+  const r = cleanSettings(p); // stage two
+  session.settingsDecode = { ok: r.ok, reason: r.ok ? '' : r.reason, dropped: r.dropped };
+  return r.value;
+}
+
+function writeSettings() {
+  if (!rawStore()) return false;
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ muted: session.muted ? 1 : 0 }));
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+// One AudioContext, created on the first gesture — never here at import time, because a context
+// built before any user action is born suspended and would queue sounds nobody ever hears.
+const audio = createAudio(globalThis);
+
 // ---------------------------------------------------------------- routes
 
 function parseRoute(hash) {
@@ -194,8 +273,19 @@ function mmss(seconds) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// Time the player actually spent facing this board. A pause is not a stall they chose to be
+// charged for: `pausedFor` accumulates finished pauses and the open one is added live, so 用时
+// reads the same whether the tab sat in 暂停 for ten minutes or was never paused at all.
+function pausedMs() {
+  return session.pausedFor + (session.paused ? Math.max(0, Date.now() - session.pauseStarted) : 0);
+}
+
+function elapsedMs() {
+  return Math.max(0, Date.now() - session.openedAt - pausedMs());
+}
+
 function elapsed() {
-  return Math.floor((Date.now() - session.openedAt) / 1000);
+  return Math.floor(elapsedMs() / 1000);
 }
 
 // The campaign position the shelf has not finished yet — where a bare 继续战役 lands.
@@ -237,6 +327,12 @@ function openLot(lot, mayResume) {
   session.openedAt = Date.now();
   session.hintMsg = '';
   session.resume = null;
+  // A new board is a new sitting: no carried-over pause, no pause time billed onto the clock.
+  if (session.paused) setPaused(false);
+  session.pausedFor = 0;
+  session.pauseStarted = 0;
+  session.autoPaused = false;
+  el.pausecard.hidden = true;
   view.clearHint();
   if (mayResume) {
     const saved = readResume();
@@ -543,7 +639,7 @@ function readoutRows() {
     ['连通块', `${a.components}${a.components > 1 ? ' · 断开了' : ''}`],
     ['步数 / 最佳', `${g.taps} / ${floor}`],
     ['修错', String(g.fixes)],
-    ['用时', mmss(g.done ? pausedAt() : elapsed())],
+    ['用时', mmss(g.done ? stoppedClock() : elapsed())],
     ['题库', `唯一解 · 枯竭 ${lot.guesses} · 深度 ${lot.depth} · 节点 ${lot.nodes}`],
     ['本盘纪录', rec ? `已胜 ${rec.plays} 次 · 最佳 ${rec.best} 下${rec.perfect ? ' · 满分' : ''}` : '尚未拿下'],
   ];
@@ -551,7 +647,8 @@ function readoutRows() {
 
 // The clock is a display, nothing more: no selection, no save key and no comparison in this
 // file reads it. It stops the moment the board is won, so the win card and the readout agree.
-function pausedAt() {
+// (This is *not* the pause — 暂停 lives in `session.paused` and freezes `elapsed()` instead.)
+function stoppedClock() {
   return session.doneClock;
 }
 
@@ -674,7 +771,7 @@ function renderCurtain() {
   el.verdict.textContent = gr.label;
   el.verdict.style.color = gr.stars ? 'var(--win)' : 'var(--lose)';
   const floor = minTaps(g.lot);
-  el.tally.innerHTML = `${g.lot.id} · ${g.lot.n}×${g.lot.n} · 黑 ${shadedOf(g.marks).length} 格 ｜ 最佳 ${floor} 下 ｜ 用了 ${g.taps} 下 ｜ 修错 ${g.fixes} 次 ｜ 用时 ${mmss(pausedAt())}`;
+  el.tally.innerHTML = `${g.lot.id} · ${g.lot.n}×${g.lot.n} · 黑 ${shadedOf(g.marks).length} 格 ｜ 最佳 ${floor} 下 ｜ 用了 ${g.taps} 下 ｜ 修错 ${g.fixes} 次 ｜ 用时 ${mmss(stoppedClock())}`;
   el.next.textContent = next.id === g.lot.id ? '再来一次' : '下一盘';
 }
 
@@ -691,14 +788,109 @@ function grade(g) {
 function syncButtons() {
   const g = session.game;
   if (!g) return;
-  el.undo.disabled = !g.history.length;
-  el.restart.disabled = !g.taps;
-  el.hint.disabled = !!g.done;
+  // 暂停期间盘面是冻结的：回退、重开、提示都不给走，指针也进不去（见 takeTap）。
+  el.undo.disabled = !g.history.length || session.paused;
+  el.restart.disabled = !g.taps || session.paused;
+  el.hint.disabled = !!g.done || session.paused;
+}
+
+// ---------------------------------------------------------------- 暂停 / 静音 / 全屏 / 玩法
+
+// One function owns the pause, and both the button and the key go through it, so the curtain, the
+// clock, the audio thread and the disabled controls can never disagree about whose turn it is.
+// A won board cannot be paused — the win card is already the thing on screen.
+function setPaused(next) {
+  const want = next === undefined ? !session.paused : !!next;
+  if (want === session.paused) return session.paused;
+  if (want && (!session.game || session.game.done)) return false;
+  session.paused = want;
+  if (want) {
+    session.pauseStarted = Date.now();
+    audio.suspend(); // 暂停是真的停下来，不是把音量调小
+    el.pauseTime.textContent = mmss(elapsed());
+    el.resume.focus();
+  } else {
+    session.pausedFor += Math.max(0, Date.now() - session.pauseStarted);
+    session.pauseStarted = 0;
+    if (!session.muted) audio.resume();
+    if (document.activeElement === el.resume) el.board.focus();
+  }
+  if (!want) session.autoPaused = false;
+  el.pausecard.hidden = !want;
+  draw();
+  return session.paused;
+}
+
+// The HUD is a mirror of state, never a second source of truth: called after every change and
+// from `draw`, so a reload or a key press cannot leave the label saying 有声 while it is silent.
+function syncHud() {
+  el.sound.textContent = session.muted ? '静音' : '有声';
+  el.sound.setAttribute('aria-pressed', session.muted ? 'true' : 'false');
+  el.sound.title = session.muted ? '已静音，按 M 恢复声音（M）' : '静音开关（M）';
+  const fs = fullscreenActive();
+  el.fullscreen.textContent = fs ? '退出全屏' : '全屏';
+  el.fullscreen.setAttribute('aria-pressed', fs ? 'true' : 'false');
+  el.fullscreen.hidden = !fullscreenSupported();
+  el.learn.setAttribute('aria-expanded', el.learnCard.hidden ? 'false' : 'true');
+}
+
+// Mute is the audio core's mute: while it holds, `ensure()` refuses before `createOscillator` and
+// counts the refusal, so nothing is allocated and the audio thread is suspended. The label and the
+// saved setting follow the *return value*, not the request.
+function setMuted(next) {
+  session.muted = audio.setMuted(next === undefined ? !session.muted : !!next);
+  writeSettings();
+  syncHud();
+  // Un-muting plays the one sound that proves it: a mute you cannot hear the difference on is a
+  // checkbox, not a feature.
+  if (!session.muted) audio.tap(OPEN);
+  return session.muted;
+}
+
+function fullscreenSupported() {
+  const doc = globalThis.document;
+  return !!(doc && doc.documentElement && typeof doc.documentElement.requestFullscreen === 'function'
+    && doc.fullscreenEnabled !== false);
+}
+
+function fullscreenActive() {
+  const doc = globalThis.document;
+  return !!(doc && doc.fullscreenElement);
+}
+
+// No fake fullscreen: on a browser that will not grant it (iOS Safari) the button hides itself
+// rather than promising a chrome-less view it cannot deliver. The promise rejection is caught,
+// because a denied fullscreen is a normal answer, not a crash.
+function toggleFullscreen() {
+  const doc = globalThis.document;
+  if (!fullscreenSupported()) {
+    say('这台设备的全屏由系统手势管，网页按不到这个开关');
+    return false;
+  }
+  if (fullscreenActive()) {
+    const p = doc.exitFullscreen();
+    if (p && p.catch) p.catch(() => {});
+    return false;
+  }
+  const p = doc.documentElement.requestFullscreen();
+  if (p && p.catch) p.catch(() => say('全屏被浏览器拦下了'));
+  return true;
+}
+
+function showLearn(next) {
+  const want = next === undefined ? el.learnCard.hidden : !!next;
+  if (el.learnCard.hidden === !want) return want;
+  el.learnCard.hidden = !want;
+  syncHud();
+  if (want) el.learnClose.focus();
+  else el.learn.focus();
+  return want;
 }
 
 function draw() {
   const g = session.game;
   if (!g) {
+    syncHud();
     setView('menu');
     renderMenu();
     renderTotals();
@@ -732,6 +924,7 @@ function draw() {
   renderMenu();
   renderCurtain();
   syncButtons();
+  syncHud();
 }
 
 // ---------------------------------------------------------------- moves
@@ -739,7 +932,7 @@ function draw() {
 function startClock() {
   clearInterval(session.clockTimer);
   session.clockTimer = setInterval(() => {
-    if (!session.game || session.game.done || document.hidden) return;
+    if (!session.game || session.game.done || session.paused || document.hidden) return;
     const cell = el.readout.querySelector('dd[data-clock]');
     if (cell) cell.textContent = mmss(elapsed());
     else draw();
@@ -770,6 +963,7 @@ function settleRecord() {
   const opened = Math.min(ALL.length, pos + 2);
   if (!wasSolved && opened > store.unlocked) store.unlock(opened);
   dropResume();
+  audio.win();
   const rec = store.record(g.lot.id);
   say(rec && rec.perfect ? `满分：${g.taps} 下，正好是地板价 ${floor}` : `拿下 · ${g.taps} 下（地板价 ${floor}）`);
 }
@@ -788,6 +982,10 @@ function afterChange() {
 function takeTap(i) {
   const g = session.game;
   if (!g) return null;
+  if (session.paused) {
+    say('已暂停：按「继续」或 P 再落子');
+    return null;
+  }
   if (g.done) {
     say('这一盘已经结束了：按「重开」或「下一盘」');
     return null;
@@ -797,11 +995,16 @@ function takeTap(i) {
     draw();
     return null;
   }
+  const before = review(g).violations.length;
   const m = tapGame(g, i);
   if (m === null) {
     say('那一格不在盘上');
     return null;
   }
+  audio.tap(m);
+  const after = review(g).violations.length;
+  // 报警是看得见的（红/紫/青），这里补一条听觉得见的：这一下把冲突数推高了。
+  if (after > before) audio.clash();
   session.cursor = i;
   session.hintMsg = ''; // the answer was about the board that used to be here
   view.clearHint();
@@ -812,12 +1015,17 @@ function takeTap(i) {
 function undoStep() {
   const g = session.game;
   if (!g) return false;
+  if (session.paused) {
+    say('已暂停：按「继续」或 P 再回退');
+    return false;
+  }
   if (!undoGame(g)) {
     say('还没有可回退的一步');
     return false;
   }
   session.scored = false;
   session.hintMsg = '';
+  audio.undo();
   afterChange();
   return true;
 }
@@ -825,6 +1033,10 @@ function undoStep() {
 function restartNow() {
   const g = session.game;
   if (!g) return;
+  // 「重开」是这一盘的第二次机会，也是一次真实的手势：先解除暂停，让新的计时从 0 开始。
+  if (session.paused) setPaused(false);
+  session.pausedFor = 0;
+  session.pauseStarted = 0;
   resetGame(g);
   session.scored = false;
   session.hintMsg = '';
@@ -839,6 +1051,10 @@ function restartNow() {
 function showHint() {
   const g = session.game;
   if (!g) return null;
+  if (session.paused) {
+    say('已暂停：先按「继续」或 P 再问题');
+    return null;
+  }
   const step = logicStep(session.cursor >= 0 ? session.cursor : -1);
   session.hintMsg = step.text;
   el.hintline.innerHTML = step.text;
@@ -850,6 +1066,7 @@ function showHint() {
     const li = el.rules.querySelector(`li[data-rule="${step.rule}"]`);
     if (li) li.classList.add('hit');
   }
+  audio.hint();
   return step;
 }
 
@@ -898,15 +1115,56 @@ el.wipe.addEventListener('click', () => {
   say('纪录与续局都清空了，回到目录');
 });
 
+el.sound.addEventListener('click', () => setMuted());
+el.fullscreen.addEventListener('click', () => toggleFullscreen());
+el.learn.addEventListener('click', () => showLearn());
+el.learnClose.addEventListener('click', () => showLearn(false));
+el.resume.addEventListener('click', () => setPaused(false));
+el.pauseRestart.addEventListener('click', () => restartNow());
+el.pauseMenu.addEventListener('click', () => {
+  setPaused(false); // 目录上没有盘，暂停也就没有意义：先把计时收回来再走
+  location.hash = '#/';
+});
+// The browser can take fullscreen away without asking (Esc on the desktop, a phone rotation), so
+// the label follows the *event*, not the last click.
+for (const type of ['fullscreenchange', 'fullscreenerror', 'webkitfullscreenchange']) {
+  document.addEventListener(type, syncHud);
+}
+// 切到别的标签页就自动暂停，回来只恢复「是我们自己按下的那一次」：玩家手动暂停过 10 分钟，
+// 不该因为切出去又切回来就被解开。
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (session.game && !session.game.done && !session.paused) session.autoPaused = setPaused(true);
+    return;
+  }
+  if (session.autoPaused) setPaused(false);
+});
+
+// The saved mute is read *before* the first paint, so a reload is silent exactly when the last
+// session was silent — a preference that resets itself is worse than no preference.
+session.muted = readSettings().muted;
+audio.setMuted(session.muted);
+
 window.addEventListener('hashchange', applyRoute);
 window.addEventListener('resize', draw);
 window.addEventListener('keydown', (ev) => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
   const g = session.game;
-  if (ev.key === 'Escape') { location.hash = '#/'; return; }
+  const k = ev.key.toLowerCase();
+  // Esc 一层层往后退：玩法弹窗 → 暂停 → 目录。按 ? 打开的人不该再记一个别的关闭键。
+  if (ev.key === 'Escape') {
+    if (!el.learnCard.hidden) showLearn(false);
+    else if (session.paused) setPaused(false);
+    else location.hash = '#/';
+    return;
+  }
+  // 这三个键在目录上也按得动：静音、全屏、玩法，跟手上有没有盘无关。
+  if (k === 'm') { ev.preventDefault(); setMuted(); return; }
+  if (k === 'f') { ev.preventDefault(); toggleFullscreen(); return; }
+  if (ev.key === '?') { ev.preventDefault(); showLearn(); return; }
   if (!g) return;
   const n = g.lot.n;
-  const k = ev.key.toLowerCase();
+  if (k === 'p') { ev.preventDefault(); setPaused(); return; }
   if (k === 'u') { ev.preventDefault(); undoStep(); return; }
   if (k === 'r') { ev.preventDefault(); restartNow(); return; }
   if (k === 'h') { ev.preventDefault(); showHint(); draw(); return; }
@@ -959,6 +1217,11 @@ window.hitori = {
   get route() { return { ...session.route }; },
   get violations() { return session.game ? review(session.game).violations : []; },
   get elapsed() { return session.game && session.game.done ? Math.floor(session.doneClock) : elapsed(); },
+  get paused() { return session.paused; },
+  get muted() { return session.muted; },
+  // Seconds taken out of the clock, live: a gate asserts the pause actually stopped the timer
+  // rather than merely hiding the board.
+  get pausedFor() { return Math.floor(pausedMs() / 1000); },
   get state() {
     const g = session.game;
     if (!g) {
@@ -966,6 +1229,8 @@ window.hitori = {
         id: null, route: session.route.kind, n: 0, marks: [], taps: 0, history: [], done: false,
         unlocked: store.unlocked, records: Object.keys(store.records).length,
         resume: !!readResume(), storageMode: store.mode, daily: session.dailyKey, pwa,
+        paused: session.paused, muted: session.muted, pausedFor: Math.floor(pausedMs() / 1000),
+        audio: audio.stats(), settings: { ...session.settingsDecode },
       };
     }
     const a = review(g);
@@ -981,6 +1246,8 @@ window.hitori = {
       records: Object.keys(store.records).length, resume: !!readResume(),
       storageMode: store.mode, daily: session.dailyKey, dailyDone: store.dailyDone(session.dailyKey),
       stats: { ...store.stats }, elapsed: this.elapsed, pwa,
+      paused: session.paused, muted: session.muted, pausedFor: Math.floor(pausedMs() / 1000),
+      audio: audio.stats(), settings: { ...session.settingsDecode },
     };
   },
   // Paint-only: re-render with an explicit patch (never mutates the game) and hand back the
@@ -1007,6 +1274,13 @@ window.hitori = {
   tap: (i) => takeTap(i),
   undo: () => undoStep(),
   reset: restartNow,
+  // 暂停/静音/全屏/玩法：走的是按钮同一个函数，不是为测试另开的一条路。
+  pause: (v) => setPaused(v),
+  mute: (v) => setMuted(v),
+  toggleFullscreen: () => toggleFullscreen(),
+  fullscreen: () => ({ supported: fullscreenSupported(), active: fullscreenActive() }),
+  learn: (v) => showLearn(v),
+  audio: () => audio.stats(),
   hint: (i) => {
     const step = i === undefined ? showHint() : logicStep(i);
     if (i !== undefined) {
@@ -1031,6 +1305,6 @@ window.hitori = {
   save: () => ({ records: { ...store.records }, stats: { ...store.stats }, daily: { ...store.daily }, unlocked: store.unlocked, mode: store.mode }),
   resume: () => readResume(),
   // 两段式解码的验尸报告：坏档只该丢那一条，不该把页面冻死。
-  decode: () => ({ save: storageCore.lastDecode(), resume: { ...resumeDecode } }),
+  decode: () => ({ save: storageCore.lastDecode(), resume: { ...resumeDecode }, settings: { ...session.settingsDecode } }),
   wipe: () => { store.reset(); dropResume(); draw(); return Object.keys(store.records).length; },
 };
