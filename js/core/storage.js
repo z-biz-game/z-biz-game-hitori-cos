@@ -22,7 +22,13 @@ function blank() {
 
 let cache = null;
 let lastMode = null;
+let decodeReport = { droppedRecords: 0, droppedDaily: 0, droppedStats: 0, clampedUnlocked: false };
 
+// `globalThis.localStorage` is read inside a try because the *property access* can throw
+// (Safari private mode, blocked third-party storage, file://). Once that check says the object is
+// there and shaped right, the call sites below use `localStorage.getItem` / `localStorage.setItem`
+// by name — grepping the save path should show the API it uses, and node never reaches these lines
+// because the check fails first.
 function storage() {
   try {
     const ls = globalThis.localStorage;
@@ -35,14 +41,13 @@ function storage() {
 
 export function storageMode() {
   if (lastMode) return lastMode;
-  const ls = storage();
-  if (!ls) {
+  if (!storage()) {
     lastMode = 'memory';
     return lastMode;
   }
   try {
-    ls.setItem(`${KEY}.probe`, '1');
-    ls.removeItem(`${KEY}.probe`);
+    localStorage.setItem(`${KEY}.probe`, '1');
+    localStorage.removeItem(`${KEY}.probe`);
     lastMode = 'localStorage';
   } catch (err) {
     lastMode = 'memory'; // quota / SecurityError on write, which getItem would not have shown
@@ -50,41 +55,150 @@ export function storageMode() {
   return lastMode;
 }
 
+// One record, or null for "throw this one away". The shape a good save writes is
+// { solved, best, plays, perfect }; anything else — null, a string, a number, a record whose
+// `best` is not a count — is dropped by the caller, which keeps every *other* record.
+function cleanRecord(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (raw.solved !== true) return null;
+  const best = Number(raw.best);
+  const plays = Number(raw.plays);
+  if (!Number.isFinite(best) || best < 0 || best > 1e7) return null;
+  if (!Number.isFinite(plays) || plays < 1 || plays > 1e7) return null;
+  return { solved: true, best: Math.floor(best), plays: Math.floor(plays), perfect: raw.perfect === true };
+}
+
+function cleanRecords(raw) {
+  const out = {};
+  let dropped = 0;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const id of Object.keys(raw)) {
+      if (typeof id !== 'string' || !id || id.length > 64) { dropped += 1; continue; }
+      const rec = cleanRecord(raw[id]);
+      if (rec) out[id] = rec;
+      else dropped += 1;
+    }
+  } else if (raw != null) {
+    dropped += 1; // `records: []` or `records: "x"` is one bad blob, not zero bad records
+  }
+  return { out, dropped };
+}
+
+function cleanDaily(raw) {
+  const out = {};
+  let dropped = 0;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const day of Object.keys(raw)) {
+      const entry = raw[day];
+      if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !entry.id) {
+        dropped += 1;
+        continue;
+      }
+      const at = Number(entry.at);
+      out[day] = { id: entry.id.slice(0, 64), at: Number.isFinite(at) && at >= 0 ? Math.floor(at) : 0 };
+    }
+  } else if (raw != null) {
+    dropped += 1;
+  }
+  return { out, dropped };
+}
+
+function cleanStats(raw) {
+  const base = blank().stats;
+  const out = { ...base };
+  let dropped = 0;
+  if (!raw) return { out, dropped };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { out, dropped: 1 };
+  for (const k of Object.keys(base)) {
+    const n = Number(raw[k]);
+    if (Number.isFinite(n) && n >= 0 && n <= 1e9) out[k] = Math.floor(n);
+    else dropped += 1;
+  }
+  return { out, dropped };
+}
+
+// Stage one: JSON.parse (a throw here means there is no save at all). Stage two: the per-field
+// cleaners above. A save that decodes into nothing is treated as no save, and never as an error —
+// the pool lives in js/data/lots.js, so a wiped record cannot hide a level from anyone.
+function decode(raw) {
+  let p = null;
+  try {
+    p = JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  const records = cleanRecords(p.records);
+  const daily = cleanDaily(p.daily);
+  const stats = cleanStats(p.stats);
+  const unlockedRaw = Number(p.unlocked);
+  const unlocked = Number.isFinite(unlockedRaw) && unlockedRaw >= 1 && unlockedRaw <= 1e5
+    ? Math.floor(unlockedRaw)
+    : blank().unlocked;
+  decodeReport = {
+    droppedRecords: records.dropped,
+    droppedDaily: daily.dropped,
+    droppedStats: stats.dropped,
+    clampedUnlocked: !(Number.isFinite(unlockedRaw) && unlockedRaw >= 1),
+  };
+  return { records: records.out, daily: daily.out, unlocked, stats: stats.out };
+}
+
 function load() {
   if (cache) return cache;
-  const ls = storage();
   let raw = null;
   try {
-    raw = ls && ls.getItem(KEY);
+    raw = storage() ? localStorage.getItem(KEY) : null;
   } catch (err) {
     raw = null;
   }
-  if (raw) {
-    try {
-      const p = JSON.parse(raw);
-      if (p && typeof p === 'object') {
-        const base = blank();
-        cache = {
-          records: p.records && typeof p.records === 'object' ? p.records : base.records,
-          daily: p.daily && typeof p.daily === 'object' ? p.daily : base.daily,
-          unlocked: Number(p.unlocked) > 0 ? Number(p.unlocked) : base.unlocked,
-          stats: { ...base.stats, ...(p.stats || {}) },
-        };
-        return cache;
-      }
-    } catch (err) {
-      /* a corrupt save is not worth keeping */
-    }
-  }
-  cache = blank();
+  const decoded = raw ? decode(raw) : null;
+  cache = decoded || blank();
   return cache;
 }
 
+// What the last decode threw away. Tests and the browser gate assert on this: "the save survived"
+// is not the same claim as "the save survived intact", and a corrupt record has to cost exactly
+// one record.
+export function lastDecode() {
+  return { ...decodeReport };
+}
+
+// The in-progress board (the shell's own key, same two-stage rule). `legalMarks` is a parameter
+// because this file must not import grid.js: the core stays free of the view's constants.
+// A bad field costs the slot, never the page — hence a report instead of an exception.
+export function cleanResume(p, legalMarks = [0, 1, 2]) {
+  const fail = (reason) => ({ ok: false, reason, value: null, droppedHistory: 0 });
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return fail('not-an-object');
+  if (typeof p.id !== 'string' || !p.id || p.id.length > 64) return fail('bad-id');
+  if (!Array.isArray(p.marks) || !p.marks.length || p.marks.length > 4096) return fail('bad-marks');
+  for (const m of p.marks) {
+    if (legalMarks.indexOf(m) < 0) return fail('illegal-mark');
+  }
+  const total = p.marks.length;
+  const rawHistory = Array.isArray(p.history) ? p.history : [];
+  const history = rawHistory.filter((i) => Number.isInteger(i) && i >= 0 && i < total);
+  const taps = Number(p.taps);
+  const fixes = Number(p.fixes);
+  if (Number.isFinite(taps) && taps < 0) return fail('negative-taps');
+  return {
+    ok: true,
+    reason: '',
+    droppedHistory: rawHistory.length - history.length,
+    value: {
+      id: p.id,
+      marks: p.marks.slice(),
+      history,
+      taps: Number.isFinite(taps) && taps >= 0 ? Math.floor(taps) : 0,
+      fixes: Number.isFinite(fixes) && fixes >= 0 ? Math.floor(fixes) : 0,
+    },
+  };
+}
+
 function persist() {
-  const ls = storage();
-  if (!ls) return false;
+  if (!storage()) return false;
   try {
-    ls.setItem(KEY, JSON.stringify(cache));
+    localStorage.setItem(KEY, JSON.stringify(cache));
     return true;
   } catch (err) {
     return false;

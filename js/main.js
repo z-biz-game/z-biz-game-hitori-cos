@@ -32,7 +32,7 @@ import { MUST_OPEN, MUST_SHADED, UNKNOWN, facts, propagate } from './core/solve.
 import {
   ALL, TIERS, byId, campaign, dailyLot, levelAt, lotsIn, randomLot, spreadText, stats as poolStats,
 } from './core/library.js';
-import { store } from './core/storage.js';
+import { cleanResume, store } from './core/storage.js';
 import { todayKey } from './core/rng.js';
 import { LOTS } from './data/lots.js';
 import * as gridCore from './core/grid.js';
@@ -79,7 +79,8 @@ const errors = [];
 
 // The same guard js/core/storage.js uses, and for the same reason: `globalThis.localStorage` can
 // *throw* on the property read (private mode, blocked storage, file://), and a throw here must
-// degrade to "no resume", never to a broken board.
+// degrade to "no resume", never to a broken board. Once the check passes, the call sites below
+// name `localStorage.getItem` / `localStorage.setItem` outright.
 function rawStore() {
   try {
     const ls = globalThis.localStorage;
@@ -90,23 +91,45 @@ function rawStore() {
   }
 }
 
+// Why the resume slot was refused. A half-broken slot must cost the slot and nothing else: the
+// board falls back to a fresh one, the records in js/core/storage.js stay untouched. The rules
+// themselves live in the core (one implementation, unit-tested there); this is the shell's mirror.
+const resumeDecode = { ok: false, reason: 'none', droppedHistory: 0 };
+
 function readResume() {
-  const ls = rawStore();
-  if (!ls) return null;
-  try {
-    const raw = ls.getItem(RESUME_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw);
-    if (!p || typeof p !== 'object' || typeof p.id !== 'string' || !Array.isArray(p.marks)) return null;
-    return p;
-  } catch (err) {
+  if (!rawStore()) {
+    resumeDecode.reason = 'no-storage';
     return null;
   }
+  let raw = null;
+  try {
+    raw = localStorage.getItem(RESUME_KEY);
+  } catch (err) {
+    resumeDecode.reason = 'read-threw';
+    return null;
+  }
+  if (!raw) {
+    resumeDecode.ok = false;
+    resumeDecode.reason = 'empty';
+    return null;
+  }
+  let p = null;
+  try { // stage one: is it JSON at all
+    p = JSON.parse(raw);
+  } catch (err) {
+    resumeDecode.ok = false;
+    resumeDecode.reason = 'unparsable';
+    return null;
+  }
+  const r = cleanResume(p, [OPEN, SHADED, DOT]); // stage two: field by field
+  resumeDecode.ok = r.ok;
+  resumeDecode.reason = r.reason;
+  resumeDecode.droppedHistory = r.droppedHistory;
+  return r.ok ? r.value : null;
 }
 
 function writeResume(g) {
-  const ls = rawStore();
-  if (!ls) return false;
+  if (!rawStore()) return false;
   // The board, the tap count and the history that lets 回退 keep working after a reload. No
   // wall-clock anywhere in here: the same save must describe the same position tomorrow.
   const payload = {
@@ -117,8 +140,8 @@ function writeResume(g) {
     fixes: g.fixes,
   };
   try {
-    if (g.done) ls.removeItem(RESUME_KEY);
-    else ls.setItem(RESUME_KEY, JSON.stringify(payload));
+    if (g.done) localStorage.removeItem(RESUME_KEY);
+    else localStorage.setItem(RESUME_KEY, JSON.stringify(payload));
     return true;
   } catch (err) {
     return false;
@@ -126,10 +149,9 @@ function writeResume(g) {
 }
 
 function dropResume() {
-  const ls = rawStore();
-  if (!ls) return false;
+  if (!rawStore()) return false;
   try {
-    ls.removeItem(RESUME_KEY);
+    localStorage.removeItem(RESUME_KEY);
     return true;
   } catch (err) {
     return false;
@@ -219,15 +241,15 @@ function openLot(lot, mayResume) {
   if (mayResume) {
     const saved = readResume();
     const total = lot.n * lot.n;
-    if (saved && saved.id === lot.id && saved.marks.length === total
-        && saved.marks.every((m) => m === OPEN || m === SHADED || m === DOT)) {
+    // readResume already refused anything malformed; what it cannot judge is whether the slot
+    // describes *this* board.
+    if (saved && saved.id === lot.id && saved.marks.length === total) {
       session.game.marks = saved.marks.slice();
-      session.game.history = Array.isArray(saved.history)
-        ? saved.history.filter((i) => Number.isInteger(i) && i >= 0 && i < total) : [];
-      session.game.taps = Number.isInteger(saved.taps) ? saved.taps : 0;
-      session.game.fixes = Number.isInteger(saved.fixes) ? saved.fixes : 0;
+      session.game.history = saved.history.slice();
+      session.game.taps = saved.taps;
+      session.game.fixes = saved.fixes;
       session.game.done = review(session.game).done;
-      session.resume = { id: lot.id, marks: saved.marks.slice(), taps: session.game.taps };
+      session.resume = { id: lot.id, marks: saved.marks.slice(), taps: saved.taps };
     }
   }
 }
@@ -1008,5 +1030,7 @@ window.hitori = {
   rules: () => Array.from(el.rules.querySelectorAll('li')).map((li) => ({ rule: Number(li.dataset.rule), hit: li.classList.contains('hit'), count: Number(li.dataset.count || 0) })),
   save: () => ({ records: { ...store.records }, stats: { ...store.stats }, daily: { ...store.daily }, unlocked: store.unlocked, mode: store.mode }),
   resume: () => readResume(),
+  // 两段式解码的验尸报告：坏档只该丢那一条，不该把页面冻死。
+  decode: () => ({ save: storageCore.lastDecode(), resume: { ...resumeDecode } }),
   wipe: () => { store.reset(); dropResume(); draw(); return Object.keys(store.records).length; },
 };
