@@ -43,6 +43,7 @@ import * as libraryCore from './core/library.js';
 import * as storageCore from './core/storage.js';
 import * as rngCore from './core/rng.js';
 import { createView } from './view.js';
+import { registerServiceWorker } from './pwa.js';
 
 const RESUME_KEY = 'hitori.resume.v1';
 const $ = (id) => document.getElementById(id);
@@ -910,6 +911,7 @@ window.addEventListener('error', (ev) => errors.push(String(ev.message || ev.err
 
 applyRoute();
 startClock();
+const pwa = registerServiceWorker();
 
 // The playtest's door. Everything behind it is the code a real click runs: `tap` goes through
 // `takeTap`, `point` reads the geometry the last frame actually drew, `hint` is the same
@@ -941,7 +943,7 @@ window.hitori = {
       return {
         id: null, route: session.route.kind, n: 0, marks: [], taps: 0, history: [], done: false,
         unlocked: store.unlocked, records: Object.keys(store.records).length,
-        resume: !!readResume(), storageMode: store.mode, daily: session.dailyKey,
+        resume: !!readResume(), storageMode: store.mode, daily: session.dailyKey, pwa,
       };
     }
     const a = review(g);
@@ -956,7 +958,7 @@ window.hitori = {
       grade: grade(g), record: store.record(g.lot.id), unlocked: store.unlocked,
       records: Object.keys(store.records).length, resume: !!readResume(),
       storageMode: store.mode, daily: session.dailyKey, dailyDone: store.dailyDone(session.dailyKey),
-      stats: { ...store.stats }, elapsed: this.elapsed,
+      stats: { ...store.stats }, elapsed: this.elapsed, pwa,
     };
   },
   // Paint-only: re-render with an explicit patch (never mutates the game) and hand back the

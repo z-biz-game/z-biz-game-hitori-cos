@@ -1,0 +1,25 @@
+{
+  "name": "一乘 · 抽刀断水 HITORI",
+  "short_name": "一乘 HITORI",
+  "description": "抽刀断水 Hitori：一次点击换三个状态。每行每列不许留下两个相等的未涂数字，黑格不许相邻，未涂格必须连成一片。40 盘，每盘的解数由两套独立代码逐格复核。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#14161a",
+  "background_color": "#14161a",
+  "categories": ["games", "puzzle"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "今日一题", "url": "./#/daily", "description": "全设备同一盘" },
+    { "name": "继续战役", "url": "./#/campaign", "description": "从下一盘没拿下的开始" }
+  ]
+}
