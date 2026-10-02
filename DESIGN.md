@@ -9,7 +9,7 @@
 而**打点也是未涂**——点只是你写给未来的记号，不是第三种棋盘状态。这个区分贯穿全仓：
 
 - `audit()` 判规则 1 时把 `OPEN` 与 `DOT` 一起当作未涂；
-- `minTaps(lot) = 黑格数 + 2 × 非黑格数`（`js/core/game.js:34-37`）——打点要两下，
+- `minTaps(lot) = 黑格数 + 2 × 非黑格数`（`js/core/game.js:39-42`）——打点要两下，
   所以「最佳 N 下」是一个可被走到的地板价，不是一个乐观估计；
 - 结算只比黑格集合（`matchesSolution()` 比 `shadedOf(marks)` 与 `lot.solution`），
   打点在哪不影响对错，只影响花费。
@@ -74,7 +74,8 @@
 - `fixes`：**从干净踩进报警**的那一下（`if (!after.clean && before.clean) game.fixes++`）；
 - `done`：`audit().done`，即「完整且无报警」，一旦置位 `tap()` 直接返回 `null`。
 
-星级用前两个：`taps === minTaps && fixes === 0` 才是三乘。这意味着**点击顺序会被打分**，
+星级用前两个：`main.js` 的 `grade()`：`over = taps − 最佳`，`over <= 0 && fixes === 0` 才是三乘。
+这意味着**点击顺序会被打分**，
 而这不是笔误：`@pointer` 里把解按格子顺序点出来要花 10 次修错（先涂黑、之后补点时那一下会路过
 一个「黑格贴着黑格」的中间态），按「先打点、后涂黑」的顺序点才是 0 次。测试因此用后者，
 并且把这个顺序的原因写在代码旁边——否则下一个改这段的人会把它「顺手」改回去。
@@ -107,7 +108,9 @@
 
 ## 9. 存档：只存能重放的东西
 
-`storage.js` 一个键 `hitori.save.v1`，纯 JSON，带版本号；`globalThis.localStorage` 可能**抛异常**
+浏览器侧有两个 localStorage 键：`storage.js` 的 `hitori.save.v1` 放纪录，`js/main.js` 的
+`hitori.resume.v1` 放没下完的那一盘——两个键都是纯 JSON、带版本号，访问路径共用同一层防护。
+`globalThis.localStorage` 可能**抛异常**
 而不是返回 null（无痕模式、Electron 沙箱），所以每一处访问都在 try 里，失败时降级成内存态并把
 `storageMode` 报出来。续局存 marks + 花费，不存 `audit()` 的结果——那是可以从 marks 重算的，
 存下来就会说谎。
@@ -179,8 +182,10 @@
 ```bash
 md5 js/data/lots.js && npm run bake && md5 js/data/lots.js   # 两个 md5 必须相同
 node tools/bake.mjs 2>&1 | tail -12                          # 四档的种子数 / 唯一解率 / 落带率 / 出货负荷
-node tools/load-audit.mjs                                    # 生成器能产出哪些负荷（约 20s，会红）
+node tools/load-audit.mjs                                    # 生成器能产出哪些负荷（会红；耗时是墙钟，README 那一格才是它的读数）
 npm run check && npm test                                    # 66 条引擎断言
+node tools/doctest.mjs     # （154 项 = 144 条等式 + 10 条 unpinned）文档每一个现值都在代码或同一个工具的重算上比一遍
+node tools/sabotage.mjs    # 破坏试验台账：README 那一节的 9 把刀逐把下，闸必须点名变红，再把实测 rc 盖回那一列
 bash tools/verify.sh                                         # 196 条浏览器断言，根形态
 BASE_URL=http://127.0.0.1:5257/z-biz-game-hitori-cos/ bash tools/verify.sh   # 同一套，前缀形态
 BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.sh  # 同一套，线上字节

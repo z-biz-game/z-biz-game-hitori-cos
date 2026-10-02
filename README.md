@@ -10,13 +10,17 @@
 ## 快速开始
 
 ```bash
-npm start                 # http://127.0.0.1:5256/  零依赖静态服务器
-npm run check             # 每个源文件 node --check + 九个浏览器场景体能否解析
+npm start                 # http://127.0.0.1:5256/  零依赖静态服务器（5256 是 npm start 传进去的；`node server.cjs` 裸跑落 5173）
+npm run check             # 每个源文件 node --check + 七个页面场景体能否解析
 npm test                  # 5 个 node 套件，66 条断言（引擎层）
+npm run unit              # 同一批 test/*.test.mjs 逐个跑，一个文件一个结论（红了知道是哪个文件）
+npm run doctest           # 文档里每一个现值都在代码/工具上重算一遍（154 项 = 144 条等式 + 10 条 unpinned）
+npm run sabotage          # 破坏试验台账：把每类谎写回代码，验闸会点名变红
 npm run bake              # 重新出题：生成 → 三条复核 → 写 js/data/lots.js
 npm run audit             # 只核已发布的 40 盘：唯一解、复核强度、负荷分布、档级文案
-npm run loads             # 生成器能产出哪些负荷：4 档 × 3000 个种子的直方图（约 20s）
-bash tools/verify.sh      # 门禁：node 套件 + 一个真 headless Chrome 跑 9 个场景、196 条断言
+npm run loads             # 生成器能产出哪些负荷：4 档 × 3000 个种子的直方图（2026-09-27 本机约 20s；耗时随机器与负载漂，不是闸的期望）
+npm run verify            # 就是下面那条 bash tools/verify.sh，一个入口一个结论
+bash tools/verify.sh      # 门禁：node 套件 + doctest + 破坏试验台账 + 一个真 headless Chrome 跑 9 个场景、196 条断言
 ```
 
 `tools/verify.sh` 支持三种收窄方式，改哪一段就跑那一段：
@@ -37,7 +41,8 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 
 - 键盘：`c` 聚焦棋盘，方向键移动光标，`Enter` / `空格` 敲当前格，`u` 回退，`r` 重开，`h` 提示。
 - 战役按 `load` 从小到大走完 40 盘；另有今日一题与随机一盘。
-- 进度与纪录只写在本机的 `localStorage`（键 `hitori.save.v1`），没有服务端。
+- 进度与纪录只写在本机的 `localStorage`：纪录在 `js/core/storage.js` 的键 `hitori.save.v1`，
+  没下完的那一盘在 `js/main.js` 的键 `hitori.resume.v1`，没有服务端。
 
 ## 三条规则（提示只会说这些）
 
@@ -58,7 +63,7 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 | 禁涂（青点） | `audit().forcedOpen`——规则 2 的推论，不是答案 |
 | 未涂 / 黑数 / 打点 | `audit().undecided`、`shadedOf(marks)`、`marks` |
 | 最佳 N 下 | `game.js` 的 `minTaps(lot) = 黑格数 + 2 × 非黑格数`，由这一盘自己黑几个格子算出 |
-| 星级 | `main.js` 的 `grade()`：`taps === minTaps && fixes === 0` 才是三乘 |
+| 星级 | `main.js` 的 `grade()`：`over = taps − 最佳`，`over <= 0 && fixes === 0` 才是三乘 |
 
 `fixes` 数的是「把一块干净的盘踩进报警」的那一下。也就是说：一次点到地板价、中途没踩过报警，
 才拿三颗星；顺序不对（先涂黑再补点）会多付修错，即使总下数一模一样。
@@ -86,6 +91,8 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 ## 难度是量出来的
 
 `node tools/bake.mjs` 的报告（本机，2026-09-27，40 盘写盘与上一次烘焙逐字节相同）：
+最后那一列「独立复核耗时」是那一台机器那一轮的读数，随负载漂，不进任何闸的期望；
+前面四列（种子数、唯一解率、落带率、出货负荷）是结构数字，`tools/doctest.mjs` 会把 bake 重跑一遍逐格对表。
 
 | 档 | n | 出题种子数 | 唯一解率 | 落进 band | 出货的负荷 | 独立复核耗时 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -147,18 +154,27 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 
 1. `test/*.test.mjs` 五个 node 套件 + `tools/audit-lots.mjs`（已发布 40 盘的独立核对）先跑；
    **引擎红着就不启动浏览器**。
-2. `node tools/playtest.mjs selftest`：把九个场景体逐个 `new Function()` 解析一遍。
+2. `node tools/doctest.mjs`：本文件与 `DESIGN.md` 里印出去的每一个现值，都在代码或同一个工具的重算上
+   比一遍（题面行、bake 报告、`npm run loads` 的直方图、断言条数、端口、引用行号、台账）。它是纯逻辑闸，
+   不起浏览器，所以本地与 CI 跑的是同一条命令。
+3. `node tools/sabotage.mjs`：破坏试验台账（下面单独一节）。每一把刀都必须让那道闸**点名**变红才算数，
+   而它自己要求干净树——本地有未提交的改动就 rc 2 拒跑，这是正确行为而不是坏了。也是纯逻辑，本地与 CI
+   同一条命令。
+4. `node tools/playtest.mjs selftest`：把七个页面场景体逐个 `new Function()` 解析一遍
+   （`@motion` 与 `@pointer` 是 node 侧的驱动函数，不在字符串里，由 `node --check` 覆盖）。
    场景体是字符串形式的页面代码，一个未转义的引号会伪装成「页面没起来」，所以这一关在启动 Chrome 之前。
-3. 起一个本仓静态服务器 + 一个 headless Chrome（独立临时 profile，CDP 9365）。
+5. 起一个本仓静态服务器 + 一个 headless Chrome（还是那一对号：HTTP 5256 / CDP 9365，独立临时 profile）。
    起跑前先量端口归属：`:9365` 上已经有人应答 DevTools 就直接退出码 2，而不是拿**别人**的浏览器
    跑完 196 条再报绿——这一条是这次加的，因为一次泄漏的 headless Chrome 让预检在毫秒级就"通过"，
    于是服务器还没 `listen()` 就被 curl，红灯写成了一句假的「nothing served」。跑 `BASE_URL` 形态时
    这一条照样量（脚本仍然起自己的 Chrome），`:5256` 那条只在本地量。
    预检随后证明被测字节确实是本仓的 `index.html`（失败时把本次服务器写的日志和监听者一起打出来），
    再等 `window.hitori` 出现。
-4. 九个场景各跑一遍，只认驱动最后一行的 `RESULT <json>`；没有 `RESULT` 等于「没跑」，不算绿。
+6. 九个场景各跑一遍，只认驱动最后一行的 `RESULT <json>`；没有 `RESULT` 等于「没跑」，不算绿。
    控制台脏（`[EXCEPTION]` / error / warning）也算红，即使断言全过。
-5. 收尾证明它自己没留东西：Chrome 退出、临时 profile 删除，否则算红。
+7. 收尾证明它自己没留东西：Chrome 退出、临时 profile 删除，否则算红。
+8. 最后把每一个场景**实测的条数**与下面那张表的「断言数」逐格比对（`SCENARIOS=` 收窄时只比跑过的那几格，
+   但至少要比一格，且九格全跑时必须比满九格）——条数掉了而场景仍然"通过"，是这个仓最容易漏的一种红。
 
 | 场景 | 断言数 | 盯的是什么 |
 | --- | --- | --- |
@@ -187,6 +203,35 @@ BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.s
 （`server.cjs` 会把目录 URL 解析到该目录的 `index.html`，和 Pages 一致）。三种形态各 196 条；
 第三种跑的是线上字节，所以只能在部署落地之后跑——push 之前先跑前两种，push 之后再跑第三种。
 
+## 破坏试验台账
+
+`tools/sabotage.mjs` 里不另存一份刀：**下面这张表就是它的全部刀源**。一行一把刀，8 列 = 刀号、
+这一刀把哪一类谎写回原处、打的是哪个文件、针（必须在那个文件里恰好命中一次，台账行自己不算）、
+改成、必须点名的那条断言、跑的那道闸、实测 rc。这一张表共 9 把刀，覆盖 8 类已经写在文档里的谎：
+表格逐格现值、场景条数表、引擎与独立复核的合计、星级口径、缺席类断言、file:NN 引用锚点、
+接线（本地与 CI 跑同一条命令）、数据行本身。
+
+一把刀算「证过」要三条同时成立：闸的退出码非 0、日志里有一行 FAIL、**并且那一行把第 6 列的断言
+原文写出来**——只比退出码的话，磁盘满、拼错的命令、起不来的浏览器都能把台账刷成一片绿。第 7 列
+只允许纯逻辑闸：浏览器腿要起 Chrome，而刀打的文件可能与它无关，那种红不属于这一本。下刀之后还原
+用的是最开始读进内存的那份字节（`writeFileSync`），不叫 `git`，所以别人未提交的改动不会被顺手吞掉。
+
+最后一列是**实测 rc**，不是愿望：跑之前写 `?`，`node tools/sabotage.mjs` 把这一轮真读到的退出码
+盖回去。台账第一件事是要求干净树——树不干净时「绿」不知道是谁撑的，它直接 rc 2 拒跑。盖完戳之后
+再跑一遍应当一个字节都不动，CI 用 `git diff --exit-code` 钉这一步。
+
+| 刀 | 这一刀把哪一类谎写回原处 | 文件 | 针 | 改成 | 必须点名的断言 | 命令 | 实测 rc |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| K1 | bake 表逐格：把隐修那一档的出题种子数写回 112 | README.md | 6×6 \| 113 \| 100.0% | 6×6 \| 112 \| 100.0% | D2 retreat 行：尺寸 / 出题种子数 / 唯一解率 / 落带率 / 出货负荷 逐格 == bake 现在报的 | node tools/doctest.mjs | ? |
+| K2 | 负荷表逐格：把隐修 band 内直方图的 6×204 写成 6×205 | README.md | 6×204 7×2 8×56 | 6×205 7×2 8×56 | D3 retreat 档：band 与直方图逐格 == make.js 的 TIERS 现值与 load-audit 现在的打印 | node tools/doctest.mjs | ? |
+| K3 | 场景条数表：把 @save 那一格的断言数写成 24 | README.md | 23 \| 存档写入、续局、纪录 | 24 \| 存档写入、续局、纪录 | D5e 文档表与 verify.sh 的 EXPECTS 逐格相同（脚本与文档不许有两个数） | node tools/doctest.mjs | ? |
+| K4 | 引擎合计：把最难那一盘（枯竭 5 · 假设 5）的 solutionCount 写成 2 | js/data/lots.js | "solutionCount":1,"depth":5,"guesses":5 | "solutionCount":2,"depth":5,"guesses":5 | D4c audit-lots 独立核对 40 盘绿 | node tools/doctest.mjs | ? |
+| K5 | 星级口径：把旧写法写回文档那一句 | README.md | 才是三乘 | 才是三乘 旧口径是 taps === minTaps | D7f 文档的星级那句逐处写的都是 over <= 0 && fixes === 0，没有写成 taps === minTaps | node tools/doctest.mjs | ? |
+| K6 | 缺席类：让页面文件真的 import 生成器（这一类不许只靠「扫不到就绿」） | js/main.js | import { connectivity } from './core/rules.js'; | import { connectivity } from './core/rules.js'; import { TIERS } from './core/make.js'; | D7m 页面文件（main.js + view.js）的 import 解析到 N 条，其中没有一条来自生成器（make.js / brute.js） | node tools/doctest.mjs | ? |
+| K7 | file:NN 锚点：把 grid.js 的行号引用挪到不含 OPEN 的那几行 | DESIGN.md | js/core/grid.js:16-18 | js/core/grid.js:120-122 | D8b js/core/grid.js 的行号引用真指着 OPEN | node tools/doctest.mjs | ? |
+| K8 | 接线：把 ci.yml 里 doctest 那一条抹掉 | .github/workflows/ci.yml | node tools/doctest.mjs \| tee /tmp/doctest.log | echo doctest 那一行被台账抹掉了 | D9e doctest 同时接在 verify.sh 与 ci.yml 上，sabotage 接在 ci.yml 上（本地与 CI 是同一条命令，不是两个东西） | node tools/doctest.mjs | ? |
+| K9 | 数据行本身：把 nook-15 的 load 写成 1，而它的枯竭+假设是 0 | js/data/lots.js | "load":0,"seed":"bake-nook-15" | "load":1,"seed":"bake-nook-15" | 而 假设+枯竭= | node tools/audit-lots.mjs | ? |
+
 ## 目录
 
 ```
@@ -199,13 +244,15 @@ js/core/make.js       生成器：种解、删数字、量难度（只在构建�
 js/core/brute.js      第二套独立代码：全枚举与抽样（只在构建期和测试里跑）
 js/core/game.js       一局的状态机：tap / undo / reset / minTaps / grade 的原料
 js/core/library.js    战役顺序、随机一盘、今日一题、统计、难度句子的拼法（spreadText）
-js/core/storage.js    一个 localStorage 键，带 localStorage 会抛异常的防护
+js/core/storage.js    纪录那一个 localStorage 键，带 localStorage 会抛异常的防护（续局在 js/main.js 的另一个键）
 js/data/lots.js       40 盘烘焙产物：题面、解、实测难度、复核方式
 js/view.js            canvas 渲染、命中、提示环、减少动态效果
 js/main.js            路由、面板、胜利卡、键盘层、window.hitori 测试桥
 tools/bake.mjs        出题管线（三条复核 + 报告）
 tools/audit-lots.mjs  已发布 40 盘的独立核对（无浏览器，CI 用）
 tools/load-audit.mjs  负荷能从哪儿被生成出来：band 内外的直方图 + 出货值的可达性（会红）
+tools/doctest.mjs     文档现值的对表闸：本文件与 DESIGN 印出去的每一个数，在代码、数据行或同一个工具的重算上比一遍
+tools/sabotage.mjs    破坏试验台账：把每类谎写回原处，验闸会不会点名变红，再把读到的退出码盖回本文件那张表
 tools/harness.mjs     node 套件的断言小工具
 tools/playtest.mjs    CDP 驱动 + 九个场景 + 页面侧第二意见（CF_BODY）
 tools/verify.sh       一条命令一个结论
