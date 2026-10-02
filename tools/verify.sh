@@ -53,6 +53,35 @@ if [ -z "${SKIP_UNIT:-}" ] && [ "$LOCAL" = 1 ]; then
   echo "--- js/data/lots.js"
   node tools/audit-lots.mjs >/tmp/hitori-audit.log 2>&1 || { tail -20 /tmp/hitori-audit.log; FAILED=1; }
   tail -2 /tmp/hitori-audit.log
+  # Prose rots quietly too: every number README/DESIGN print is re-derived here — from the data
+  # rows, from the same tools re-run, or from the code. Logic-only, so CI and a laptop run the
+  # identical command, and a red doc stops a browser run just like a red test does.
+  echo "=== doctest ==="
+  node tools/doctest.mjs >/tmp/hitori-doctest.log 2>&1 || FAILED=1
+  grep -E '^  FAIL|^合计 |^rows: ' /tmp/hitori-doctest.log | tail -20
+  # 文档对完表还得证明这道闸真的会咬：把 README 台账里的每一把刀逐把下回原处，要求那道纯逻辑闸
+  # 点名变红，并把真读到的退出码盖回 README 那一列。它第一步要求干净树——手里还有未提交的改动时
+  # 「绿」不知道是谁撑的，于是它 rc 2 拒跑，这是正确行为而不是坏了，日志里看得见。
+  # 日志写在仓外的工作区根，不进仓、不进 /tmp：这一趟会改 README（盖戳），日志不能把树弄脏。
+  echo "=== sabotage ledger ==="
+  SABLOG="$HERE/../_tmp-hitori-sabotage.log"
+  node tools/sabotage.mjs >"$SABLOG" 2>&1
+  SAB_RC=$?
+  printf 'RC=%s\n' "$SAB_RC" >>"$SABLOG"
+  grep -E '^红 ✓|^  未过|^合计 |^rows: |^RC=|^台账停住了' "$SABLOG" | tail -20
+  # rc 与刀数都从日志里读回来，不拿管道的退出码当闸的退出码（`cmd | tail` 报的是 tail 的）。
+  LOG_RC=$(grep '^RC=' "$SABLOG" | tail -1 | sed 's/^RC=//')
+  SAB_ROWS=$(grep '^rows: ' "$SABLOG" | tail -1 | awk '{print $2}')
+  SAB_FAIL=$(grep '^rows: ' "$SABLOG" | tail -1 | awk '{print $4}')
+  KNIVES=$(grep -cE '^\| K[0-9]+ \| ' README.md)
+  echo "ledger rc=$SAB_RC（读回 $LOG_RC）· 台账 $SAB_ROWS 把 / README $KNIVES 行 · fail=$SAB_FAIL"
+  if [ "$LOG_RC" != "$SAB_RC" ]; then
+    echo "sabotage 的退出码读不回来：shell 说 $SAB_RC，日志说 $LOG_RC" >&2; FAILED=1;
+  fi
+  if [ "$SAB_RC" -ne 0 ] || [ "$SAB_FAIL" != "0" ] || [ "$SAB_ROWS" != "$KNIVES" ] || [ "$SAB_ROWS" -lt 8 ]; then
+    echo "=== 破坏试验台账没过（rc=$SAB_RC · 刀数 日志 $SAB_ROWS vs README $KNIVES · fail $SAB_FAIL）===" >&2
+    FAILED=1;
+  fi
   if [ $FAILED -ne 0 ]; then
     echo "=== node suites failed; browser not started ===" >&2
     exit $FAILED
@@ -168,6 +197,11 @@ done
 echo "boot: hitori ready at $BASE"
 
 TOTAL=0
+SEEN=""
+# README 的场景表是契约：一个场景悄悄少了一条断言，它仍然可以「通过」。所以每个场景实测的
+# `rows:` 都要与这张表逐格对上；`SCENARIOS=` 收窄时只比跑过的那几格，但至少比一格，九格全跑时
+# 必须比满九格。数字写在这里一份、写在文档一份，是由 doctest 的 D5e 逐格对出来的。
+EXPECTS='boot=24 taps=20 rules=25 logic=16 routes=23 save=23 reloaded=17 motion=11 pointer=37'
 # @reloaded has to run after @save (it reads what @save left on disk), and it runs *without*
 # `nonav`: each scenario is its own driver process, and re-navigating is what makes "a fresh page
 # reads its progress off disk" an actual fresh page instead of the same document.
@@ -201,6 +235,7 @@ sys.exit(0 if (d.get("pass") and n > 0) else 1)
   esac
   N=$(printf '%s' "$SUM" | awk '{ for (i = 1; i < NF; i++) if ($i == "rows:") print $(i + 1) }' | tr -d '\n')
   TOTAL=$((TOTAL + ${N:-0}))
+  SEEN="$SEEN $s=${N:-none}"
   # A clean console is part of the contract: a thrown page error, a refused resource or a rendering
   # warning all count, even when every assertion above happened to pass.
   if printf '%s' "$OUT" | grep -qE '\[EXCEPTION\]|\[log:error\]|\[error\]|\[warning\]'; then
@@ -230,5 +265,36 @@ else
   echo "=== chrome exited, temp profile gone ==="
 fi
 rm -rf "$UDD"
+
+# --------------------------------------------------------------------------- measured vs documented
+# 每个场景实测的 `rows:` 与 README 那张表逐格对上。掉了条数而场景仍然「通过」，是这个仓最容易
+# 漏的一种红——所以这里比的是**格子数**（本轮请求了几个场景就必须比几格）而不只是比总值。
+DESIRED_N=$(printf '%s\n' ${SCENARIOS:-boot taps rules logic routes save reloaded motion pointer} | wc -w | tr -d ' ')
+WANT_TOTAL=0
+for kv in $EXPECTS; do WANT_TOTAL=$((WANT_TOTAL + ${kv#*=})); done
+CELLS=0
+DRIFT=""
+for kv in $EXPECTS; do
+  k=${kv%%=*}
+  want=${kv#*=}
+  got=""
+  for s in $SEEN; do case "$s" in "$k="*) got=${s#*=} ;; esac; done
+  [ -z "$got" ] && continue          # SCENARIOS= 收窄时，没跑的那几格不比
+  CELLS=$((CELLS + 1))
+  if [ "$got" = "none" ]; then
+    DRIFT="$DRIFT $k:没报条数"
+  elif [ "$got" != "$want" ]; then
+    DRIFT="$DRIFT $k:实测${got}≠表${want}"
+  fi
+done
+COMPARED=$CELLS
+if [ "$CELLS" -lt 1 ]; then echo "  COUNT TABLE NOT EXERCISED：一格都没比上" >&2; FAILED=1; fi
+if [ "$CELLS" -ne "$DESIRED_N" ]; then echo "  只比了 $CELLS 格，本轮请求了 $DESIRED_N 个场景" >&2; FAILED=1; fi
+if [ -n "$DRIFT" ]; then echo "  COUNT DRIFT:$DRIFT" >&2; FAILED=1; fi
+if [ "$CELLS" -eq "$DESIRED_N" ] && [ "$TOTAL" -ne "$WANT_TOTAL" ]; then
+  echo "  合计 $TOTAL 条，与表里的 $WANT_TOTAL 条不符" >&2; FAILED=1
+fi
+echo "=== count table: $COMPARED/$DESIRED_N 格逐格对上（实测合计 $TOTAL / 表中合计 $WANT_TOTAL）==="
+
 [ $FAILED -eq 0 ] && echo "=== ALL GREEN ===" || echo "=== FAILURES ABOVE ==="
 exit $FAILED

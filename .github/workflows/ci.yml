@@ -97,3 +97,61 @@ jobs:
           curl -fsS -m 3 "http://127.0.0.1:5503/z-biz-game-hitori-cos/js/main.js" >/dev/null
           curl -fsS -m 3 "http://127.0.0.1:5503/z-biz-game-hitori-cos/js/core/solve.js" >/dev/null
           BASE_URL=http://127.0.0.1:5503/z-biz-game-hitori-cos/ bash tools/verify.sh
+
+  # 文档现值的对表闸：README/DESIGN 印出去的每一个数，都在数据行、代码或同一个工具的重算上比一遍。
+  # 纯逻辑（不起浏览器），所以 CI 与本地跑的是同一条命令 `npm run doctest`。
+  doctest:
+    name: docs agree with code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Item count is printed (no silently-empty gate)
+        run: |
+          node tools/doctest.mjs | tee /tmp/doctest.log
+          grep '^rows: [1-9]' /tmp/doctest.log
+          grep '^钉成等式的文档现值：' /tmp/doctest.log
+
+      # 文档自己钉了两个数：等式项数与 unpinned 项数。闸报的数与文档写的数必须由同一条 grep 相等，
+      # 否则「文档写了 66 项而闸只有 60 项」这种漂移就只是注释里的故事。
+      - name: Pinned item count equals the count the docs declare
+        run: |
+          RUN=$(grep '^rows: ' /tmp/doctest.log | sed 's/^rows: \([0-9]\+\) .*/\1/')
+          DOC=$(grep -oE '（[0-9]+ 项 = [0-9]+ 条等式 \+ [0-9]+ 条 unpinned）' README.md DESIGN.md | head -1 | grep -oE '[0-9]+' | head -1)
+          echo "gate rows=$RUN docs=$DOC"
+          test "$RUN" = "$DOC"
+
+      - name: The unpinned list is pinned too (each entry's sentence still in the docs)
+        run: |
+          UN=$(grep '^钉成等式的文档现值' /tmp/doctest.log | sed 's/.*unpinned：\([0-9]\+\) 项/\1/')
+          test -n "$UN"
+          grep -Eq "unpinned（$UN 条）|$UN 条 unpinned" README.md DESIGN.md
+
+      - name: Every cited line in the docs still exists in the tree
+        run: |
+          node tools/doctest.mjs | grep '^  ok   D8' | tee /tmp/d8.log
+          grep -c 'D8b' /tmp/d8.log
+          grep -c 'path:NN' /tmp/d8.log
+
+  # 破坏试验台账：把每一类谎写回原处，验闸必须**点名**变红，再把真实退出码读回来盖进 README。
+  # 台账自己要求干净树，所以它跑完之后 `git diff --exit-code` 必须为空——仓库里那一列 rc 与这一轮
+  # 读到的 rc 相同，盖戳才是幂等的，而不是每次 CI 都把树弄脏。
+  sabotage:
+    name: sabotage ledger
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Ledger (clean tree; every knife must turn the gate red and name the assertion)
+        run: node tools/sabotage.mjs
+
+      - name: The rc column is already stamped, so the ledger leaves the tree byte-identical
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
