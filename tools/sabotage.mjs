@@ -129,7 +129,10 @@ if (changed) writeFileSync(README_PATH, stampedRaw, 'utf8');
 say(`rc 列：${changed ? '已把这一轮读到的退出码写回 README（再跑一遍应当一字不变）' : '与这一轮读到的退出码逐格相同，README 一个字节没动'}`);
 
 const after = spawnSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' });
-const left = (after.stdout || '').trim().split('\n').filter(Boolean).map(l => l.slice(3).trim());
+// 逐行取路径，不能先 trim 整段输出：porcelain 第一行的前导空格（未暂存的改动是 " M 路径"）
+// 会被整段 trim 吃掉，于是 slice(3) 把 README.md 读成 EADME.md，本来正确的「只剩 rc 戳」被报成脏树。
+const left = (after.stdout || '').split('\n').filter(l => l.trim() !== '')
+  .map(l => l.replace(/^.{0,2}\s+/, '').trim());
 if (left.length > 1 || (left.length === 1 && left[0] !== 'README.md')) {
   say(`未还原：台账跑完还留着 ${left.join(' ，') || '（空）'}——除 README 的 rc 戳之外什么都不该留`);
   bad.push('树没回到干净');

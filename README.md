@@ -209,7 +209,7 @@ BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.s
 这一刀把哪一类谎写回原处、打的是哪个文件、针（必须在那个文件里恰好命中一次，台账行自己不算）、
 改成、必须点名的那条断言、跑的那道闸、实测 rc。这一张表共 9 把刀，覆盖 8 类已经写在文档里的谎：
 表格逐格现值、场景条数表、引擎与独立复核的合计、星级口径、缺席类断言、file:NN 引用锚点、
-接线（本地与 CI 跑同一条命令）、数据行本身。
+接线（复现步骤必须点齐每一道闸）、数据行本身。
 
 一把刀算「证过」要三条同时成立：闸的退出码非 0、日志里有一行 FAIL、**并且那一行把第 6 列的断言
 原文写出来**——只比退出码的话，磁盘满、拼错的命令、起不来的浏览器都能把台账刷成一片绿。第 7 列
@@ -225,11 +225,11 @@ BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.s
 | K1 | bake 表逐格：把隐修那一档的出题种子数写回 112 | README.md | 6×6 \| 113 \| 100.0% | 6×6 \| 112 \| 100.0% | D2 retreat 行：尺寸 / 出题种子数 / 唯一解率 / 落带率 / 出货负荷 逐格 == bake 现在报的 | node tools/doctest.mjs | ? |
 | K2 | 负荷表逐格：把隐修 band 内直方图的 6×204 写成 6×205 | README.md | 6×204 7×2 8×56 | 6×205 7×2 8×56 | D3 retreat 档：band 与直方图逐格 == make.js 的 TIERS 现值与 load-audit 现在的打印 | node tools/doctest.mjs | ? |
 | K3 | 场景条数表：把 @save 那一格的断言数写成 24 | README.md | 23 \| 存档写入、续局、纪录 | 24 \| 存档写入、续局、纪录 | D5e 文档表与 verify.sh 的 EXPECTS 逐格相同（脚本与文档不许有两个数） | node tools/doctest.mjs | ? |
-| K4 | 引擎合计：把最难那一盘（枯竭 5 · 假设 5）的 solutionCount 写成 2 | js/data/lots.js | "solutionCount":1,"depth":5,"guesses":5 | "solutionCount":2,"depth":5,"guesses":5 | D4c audit-lots 独立核对 40 盘绿 | node tools/doctest.mjs | ? |
+| K4 | 引擎合计：把 minTaps 的「一个点两下」写成三下，出货行上的地板价当场对不上 | js/core/game.js | return lot.solution.length + 2 * (total - lot.solution.length); | return lot.solution.length + 3 * (total - lot.solution.length); | D4c audit-lots 独立核对 40 盘绿 | node tools/doctest.mjs | ? |
 | K5 | 星级口径：把旧写法写回文档那一句 | README.md | 才是三乘 | 才是三乘 旧口径是 taps === minTaps | D7f 文档的星级那句逐处写的都是 over <= 0 && fixes === 0，没有写成 taps === minTaps | node tools/doctest.mjs | ? |
 | K6 | 缺席类：让页面文件真的 import 生成器（这一类不许只靠「扫不到就绿」） | js/main.js | import { connectivity } from './core/rules.js'; | import { connectivity } from './core/rules.js'; import { TIERS } from './core/make.js'; | D7m 页面文件（main.js + view.js）的 import 解析到 N 条，其中没有一条来自生成器（make.js / brute.js） | node tools/doctest.mjs | ? |
 | K7 | file:NN 锚点：把 grid.js 的行号引用挪到不含 OPEN 的那几行 | DESIGN.md | js/core/grid.js:16-18 | js/core/grid.js:120-122 | D8b js/core/grid.js 的行号引用真指着 OPEN | node tools/doctest.mjs | ? |
-| K8 | 接线：把 ci.yml 里 doctest 那一条抹掉 | .github/workflows/ci.yml | node tools/doctest.mjs \| tee /tmp/doctest.log | echo doctest 那一行被台账抹掉了 | D9e doctest 同时接在 verify.sh 与 ci.yml 上，sabotage 接在 ci.yml 上（本地与 CI 是同一条命令，不是两个东西） | node tools/doctest.mjs | ? |
+| K8 | 接线：把台账从 DESIGN §13 的复现步骤里抹掉（照着复现的人就再也跑不到它） | DESIGN.md | node tools/sabotage.mjs | # 复现步骤里没有这一条 | D9h DESIGN §13 的复现块里有这两道新闸的命令（照别人抄的复现步骤必须包含全部闸） | node tools/doctest.mjs | ? |
 | K9 | 数据行本身：把 nook-15 的 load 写成 1，而它的枯竭+假设是 0 | js/data/lots.js | "load":0,"seed":"bake-nook-15" | "load":1,"seed":"bake-nook-15" | 而 假设+枯竭= | node tools/audit-lots.mjs | ? |
 
 ## 目录
