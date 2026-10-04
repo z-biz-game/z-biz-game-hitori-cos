@@ -82,6 +82,11 @@ if [ -z "${SKIP_UNIT:-}" ] && [ "$LOCAL" = 1 ]; then
     echo "=== 破坏试验台账没过（rc=$SAB_RC · 刀数 日志 $SAB_ROWS vs README $KNIVES · fail ${SAB_FAIL}）===" >&2
     FAILED=1;
   fi
+  # 部署集闸：ci.yml 跑这两步、本地整闸以前一次都不跑。「本地全绿、线上 404 自己的 manifest /
+  # sw.js / 图标」这一类坏法缺的就是这一步；它不碰 Chrome，所以能赶在上面那句「browser not started」。
+  echo "=== deploy-set ==="
+  node tools/deploy-set.mjs || FAILED=1
+  node tools/deploy-set-selftest.mjs || FAILED=1
   if [ $FAILED -ne 0 ]; then
     echo "=== node suites failed; browser not started ===" >&2
     exit $FAILED
