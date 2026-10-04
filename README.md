@@ -307,6 +307,6 @@ X13 内联位图谎报尺寸——只在有靶子时下：X11/X12 要页面上�
 不同，台架跟着走。
 
 `node tools/deploy-set.mjs` 与 `node tools/deploy-set-selftest.mjs` 就是 CI 跑的那两条命令本身
-（package.json 里的 `deploy-set` / `deploy-set:selftest` 只是同一支脚本的 npm 入口）；把它们接进本仓
-那条浏览器 one-shot（`tools/verify.sh`）还欠着——那道脚本的腿名单与条数钉是每个仓自己的形状。
+（package.json 里的 `deploy-set` / `deploy-set:selftest` 只是同一支脚本的 npm 入口）；本仓的整闸在 `tools/verify.sh` 的 `=== deploy-set ===` 那一段也各跑一次；这两处是不是真把红传到了退出码，还没进过阳性对照
+台账，所以这里只写「在哪跑」，不写「红一定传得下去」。
 
