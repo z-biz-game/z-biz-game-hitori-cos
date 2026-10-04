@@ -74,12 +74,12 @@ if [ -z "${SKIP_UNIT:-}" ] && [ "$LOCAL" = 1 ]; then
   SAB_ROWS=$(grep '^rows: ' "$SABLOG" | tail -1 | awk '{print $2}')
   SAB_FAIL=$(grep '^rows: ' "$SABLOG" | tail -1 | awk '{print $4}')
   KNIVES=$(grep -cE '^\| K[0-9]+ \| ' README.md)
-  echo "ledger rc=$SAB_RC（读回 $LOG_RC）· 台账 $SAB_ROWS 把 / README $KNIVES 行 · fail=$SAB_FAIL"
+  echo "ledger rc=${SAB_RC}（读回 ${LOG_RC}）· 台账 $SAB_ROWS 把 / README $KNIVES 行 · fail=$SAB_FAIL"
   if [ "$LOG_RC" != "$SAB_RC" ]; then
-    echo "sabotage 的退出码读不回来：shell 说 $SAB_RC，日志说 $LOG_RC" >&2; FAILED=1;
+    echo "sabotage 的退出码读不回来：shell 说 ${SAB_RC}，日志说 $LOG_RC" >&2; FAILED=1;
   fi
   if [ "$SAB_RC" -ne 0 ] || [ "$SAB_FAIL" != "0" ] || [ "$SAB_ROWS" != "$KNIVES" ] || [ "$SAB_ROWS" -lt 8 ]; then
-    echo "=== 破坏试验台账没过（rc=$SAB_RC · 刀数 日志 $SAB_ROWS vs README $KNIVES · fail $SAB_FAIL）===" >&2
+    echo "=== 破坏试验台账没过（rc=$SAB_RC · 刀数 日志 $SAB_ROWS vs README $KNIVES · fail ${SAB_FAIL}）===" >&2
     FAILED=1;
   fi
   if [ $FAILED -ne 0 ]; then
@@ -294,7 +294,7 @@ if [ -n "$DRIFT" ]; then echo "  COUNT DRIFT:$DRIFT" >&2; FAILED=1; fi
 if [ "$CELLS" -eq "$DESIRED_N" ] && [ "$TOTAL" -ne "$WANT_TOTAL" ]; then
   echo "  合计 $TOTAL 条，与表里的 $WANT_TOTAL 条不符" >&2; FAILED=1
 fi
-echo "=== count table: $COMPARED/$DESIRED_N 格逐格对上（实测合计 $TOTAL / 表中合计 $WANT_TOTAL）==="
+echo "=== count table: $COMPARED/$DESIRED_N 格逐格对上（实测合计 $TOTAL / 表中合计 ${WANT_TOTAL}）==="
 
 [ $FAILED -eq 0 ] && echo "=== ALL GREEN ===" || echo "=== FAILURES ABOVE ==="
 exit $FAILED

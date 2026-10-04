@@ -248,7 +248,7 @@ js/core/storage.js    纪录那一个 localStorage 键，带 localStorage 会抛
 js/data/lots.js       40 盘烘焙产物：题面、解、实测难度、复核方式
 js/view.js            canvas 渲染、命中、提示环、减少动态效果
 js/main.js            路由、面板、胜利卡、键盘层、window.hitori 测试桥
-tools/bake.mjs        出题管线（三条复核 + 报告） / tools/assemble-site / tools/deploy-set / tools/deploy-set-selftest
+tools/bake.mjs        出题管线（三条复核 + 报告）
 tools/audit-lots.mjs  已发布 40 盘的独立核对（无浏览器，CI 用）
 tools/load-audit.mjs  负荷能从哪儿被生成出来：band 内外的直方图 + 出货值的可达性（会红）
 tools/doctest.mjs     文档现值的对表闸：本文件与 DESIGN 印出去的每一个数，在代码、数据行或同一个工具的重算上比一遍
