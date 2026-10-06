@@ -22,12 +22,7 @@ jobs:
       # No npm install: the game has zero runtime dependencies, and pulling Electron into CI to
       # prove nothing is how a repo starts failing on a network flake.
       - name: Syntax check every source
-        run: |
-          for f in $(git ls-files 'js/*.js' 'js/*/*.js'); do node --check "$f" || exit 1; done
-          node --check server.cjs
-          node --check electron/main.cjs
-          for f in $(git ls-files 'tools/*.mjs' 'test/*.mjs'); do node --check "$f" || exit 1; done
-
+        run: npm run check
       # The engine suites: three rule checkers that must agree cell by cell, the pencil route,
       # the state machine and the generator's own accounting.
       - name: Engine tests
