@@ -444,22 +444,32 @@ ok(bruteImports.length === 0 && /brute\.js` 也不 import `rules\.js/.test(DESIG
   `brute.js import ${bruteImports.length} 条 · 文档那句在：${/brute\.js` 也不 import `rules\.js/.test(DESIGN)}`);
 
 // ---- D8 引用锚点：文档与注释里的 file:NN 都得落在真行上，带符号的还要真指到那个符号 ----
+const wordCache = new Map();
+// 落点检查原先用 `seg.includes(token)`，这比它替掉的手抄锚点更弱：`band` 会命中 `bands`、`OPEN` 会命中
+// `MUST_OPEN`，于是引用真的漂到邻行那天读出来的是绿。标识符形状的落点要求名字两侧不再是标识符字符。
+const hasWord = (text, name) => {
+  if (!wordCache.has(name)) {
+    wordCache.set(name, new RegExp('(^|[^A-Za-z0-9_$])' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^A-Za-z0-9_$])'));
+  }
+  return wordCache.get(name).test(text);
+};
+const isIdShape = (t) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(t);
 const citeRe = /((?:\.github\/workflows\/|tools\/|js\/|css\/|test\/)?[\w./-]+\.(?:js|mjs|cjs|sh|json|html|yml|css)):(\d+)(?:-(\d+))?/g;
 const srcForCites = [README_DOC, DESIGN_DOC, read('tools/load-audit.mjs'), read('tools/playtest.mjs'), read('js/main.js'), read('js/core/library.js')].join('\n');
 const cites = [...srcForCites.matchAll(citeRe)];
-ok(cites.length >= 8, `D8a path:NN 引用解析到 ${cites.length} 条（少于 8 条说明引用格式被换了，下面的等式就在空转）`, `${cites.length} 条`);
 const CITABLE = ['', 'js/', 'js/core/', 'js/data/', 'tools/', 'css/', 'test/'];
 const resolveCite = p => CITABLE.map(pre => pre + p).find(q => existsSync(join(ROOT, q))) || null;
-const citeBad = [];
-for (const c of cites) {
-  const rp = resolveCite(c[1]);
-  if (!rp) { citeBad.push(`${c[1]}:${c[2]}（仓里找不到这个文件）`); continue; }
-  const src = read(rp);
-  const n = src.split('\n').length;
-  if (+c[2] > n || (+c[3] && +c[3] > n)) citeBad.push(`${rp}:${c[2]}${c[3] ? '-' + c[3] : ''}（该文件只有 ${n} 行）`);
-}
-ok(citeBad.length === 0, `D8 ${cites.length} 条 path:NN 引用都落在真实文件的行数内`,
-  citeBad.length ? `越界：${citeBad.join('，')}` : `${cites.length} 条全部在范围内`);
+// 一条引用能犯的错有三样：文件不在树里、行号越界、被指的行段整段是空行。第三样是这一轮补的：
+// 在中间插几行之后 `:NN` 指的是空行，可它还在界内，只问「行号存在吗」的那道闸一路绿。
+const citeMiss = (p, fromRaw, toRaw) => {
+  const rp = resolveCite(p);
+  if (!rp) return `${p}:${fromRaw}（仓里找不到这个文件）`;
+  const src = read(rp).split('\n');
+  const to = +(toRaw || fromRaw);
+  if (+fromRaw > src.length || to > src.length) return `${rp}:${fromRaw}${toRaw ? '-' + toRaw : ''}（该文件只有 ${src.length} 行）`;
+  if (src.slice(+fromRaw - 1, to).join('').trim() === '') return `${rp}:${fromRaw}${toRaw ? '-' + toRaw : ''} 那几行整段是空行`;
+  return '';
+};
 const ANCHORS = [
   ['js/core/grid.js', 'OPEN', /`(js\/core\/grid\.js):(\d+)-(\d+)` 定死 `OPEN/, 'D8b js/core/grid.js 的行号引用真指着 OPEN'],
   ['js/core/game.js', 'minTaps', /`(js\/core\/game\.js):(\d+)-(\d+)`）——打点要两下/, 'D8b js/core/game.js 的行号引用真指着 minTaps'],
@@ -467,6 +477,45 @@ const ANCHORS = [
   ['js/core/make.js', 'band', /`(js\/core\/make\.js):(\d+)` 那句注释就是这个意思/, 'D8b js/core/make.js 的行号引用真指着 band'],
   ['css/game.css', '.menu', /`(css\/game\.css):(\d+)` 给 `\.menu` 定了 `display: grid`/, 'D8b css/game.css 的行号引用真指着 .menu'],
 ];
+// 落点口径：标识符形状的认整词，CSS 选择器那种带 `.` 的形状留在子串上（它在样式表里没有同名的长
+// 标识符可以蹭，硬套整词只会让这一格去核一个本不存在的东西）——两处口径不同是设计，不是漏。
+const anchorSeg = (file, a, b) => read(file).split('\n').slice(a - 1, b).join('\n');
+const anchorMiss = (file, token, a, b) => {
+  const seg = anchorSeg(file, a, b);
+  const at = (v) => (isIdShape(v) ? hasWord(seg, v) : seg.includes(v));
+  return at(token) ? '' : `${file}:${a}${b > a ? `-${b}` : ''} 那几行里没有${isIdShape(token) ? '整词' : ''} ${token}`;
+};
+const rangeM = PLAYTEST.match(/test\/game\.test\.mjs:(\d+)-(\d+)/);
+const rangeCite = (rangeM || [])[0];
+const rangeHit = !!rangeM && !anchorMiss('test/game.test.mjs', 'fixes', +rangeM[1], +rangeM[2]);
+const docAnchors = ANCHORS.map(([file, token, re]) => {
+  const m = DESIGN.match(re);
+  return m ? { file, token, from: +m[2], to: +(m[3] || m[2]) } : null;
+}).filter(Boolean).concat(rangeM
+  ? [{ file: 'test/game.test.mjs', token: 'fixes', from: +rangeM[1], to: +rangeM[2] }]
+  : []);
+// 整词这一道自己带一把刀：把某个锚点名字截掉最后一格，截出来的串仍然是被指那几行的**子串**、
+// 却不是整词。挑不出这样的靶子就等于口径退回子串（那一天所有候选都会「过」），所以这里当场红。
+const wordKnife = (() => {
+  for (const d of docAnchors) {
+    if (!isIdShape(d.token)) continue;
+    const seg = anchorSeg(d.file, d.from, d.to);
+    const cut = d.token.slice(0, -1);
+    if (cut.length < 3 || !seg.includes(d.token) || !seg.includes(cut)) continue;
+    if (anchorMiss(d.file, cut, d.from, d.to)) return `${d.token}→${cut} 在 ${d.file}:${d.from}-${d.to} 是子串但不是整词`;
+  }
+  return '';
+})();
+// 空行那一道同样不许空转：靶子从本闸自己的文件里现量（写死的行号会在有人填了那一行那天停止测试）。
+const ownLines = read('tools/doctest.mjs').split('\n');
+let blankAt = 0;
+for (let i = 1; i < ownLines.length; i++) if (String(ownLines[i]).trim() === '') { blankAt = i + 1; break; }
+const blankKnife = blankAt ? citeMiss('tools/doctest.mjs', blankAt, null) : '';
+ok(cites.length >= 8 && !!wordKnife, `D8a path:NN 引用解析到 ${cites.length} 条（少于 8 条说明引用格式被换了，下面的等式就在空转；整词那一道自己带一把截前缀的刀）`,
+  wordKnife ? `${cites.length} 条 · 刀：${wordKnife}` : `本闸的锚点里截不出前缀靶子 —— 整词这一道没被证明过（现推 ${docAnchors.length} 条锚点）`);
+const citeBad = cites.map(c => citeMiss(c[1], c[2], c[3])).filter(Boolean);
+ok(citeBad.length === 0 && !!blankKnife, `D8 ${cites.length} 条 path:NN 引用都落在真实文件的行数内、且被指的那几行整段不许是空行（这一格自己带一把指向空行的刀）`,
+  citeBad.length ? `越界/不存在/空行：${citeBad.join('，')}` : blankKnife ? `${cites.length} 条全部在范围内 · 刀：本闸第 ${blankAt} 行是空行，指过去判红` : '本闸自己的文件里找不出空行靶子 —— 空行那一道没被证明过');
 for (const [file, token, re, label] of ANCHORS) {
   const m = DESIGN.match(re);
   let hit = false;
@@ -474,23 +523,16 @@ for (const [file, token, re, label] of ANCHORS) {
   if (m) {
     const a = +m[2];
     const b = +(m[3] || m[2]);
-    const lines = read(file).split('\n');
-    const seg = lines.slice(a - 1, b).join('\n');
-    hit = seg.includes(token);
-    detail = `${file}:${a}${m[3] ? '-' + m[3] : ''} 那${m[3] ? '几' : '一'}行${hit ? '含' : '不含'} ${token}（实际是「${(lines[a - 1] || '').trim().slice(0, 46)}」）`;
+    const miss = anchorMiss(file, token, a, b);
+    hit = !miss;
+    detail = `${file}:${a}${m[3] ? '-' + m[3] : ''} 那${m[3] ? '几' : '一'}行${hit ? '坐着' : '没有'} ${token}（实际是「${(read(file).split('\n')[a - 1] || '').trim().slice(0, 46)}」）${hit ? '' : '：' + miss}`;
   }
   ok(hit, label, detail);
 }
 const gradeAt = MAIN.split('\n').findIndex(l => /function grade\(g\)/.test(l)) + 1;
-const rangeCite = (PLAYTEST.match(/test\/game\.test\.mjs:(\d+)-(\d+)/) || [])[0];
-const rangeM = PLAYTEST.match(/test\/game\.test\.mjs:(\d+)-(\d+)/);
-let rangeHit = false;
-if (rangeM) {
-  const lines = read('test/game.test.mjs').split('\n');
-  rangeHit = lines.slice(+rangeM[1] - 1, +rangeM[2]).join('\n').includes('fixes');
-}
 ok(gradeAt > 0 && rangeHit, `D8c 代码注释里的引用也一起钉：playtest 写的 ${rangeCite || '?'} 那几行现在真的在讲 fixes（grade() 在 main.js 第 ${gradeAt} 行，文档按名字引它，不抄行号）`,
-  `game.test.mjs 那 15 行含 fixes：${rangeHit} · grade() 第 ${gradeAt} 行`);
+  rangeHit ? `game.test.mjs 那 ${rangeM ? +rangeM[2] - +rangeM[1] + 1 : 0} 行整词坐着 fixes：${rangeHit} · grade() 第 ${gradeAt} 行`
+    : `game.test.mjs:${rangeCite || '解析不到'} 的落点没有整词 fixes${rangeM ? '：' + anchorMiss('test/game.test.mjs', 'fixes', +rangeM[1], +rangeM[2]) : ''} · grade() 第 ${gradeAt} 行`);
 
 // ---- D9 接线：文件地图、npm scripts、CI、verify.sh 跑的是同一套 ----
 const mapRows = [...README.matchAll(/^([a-z][\w./-]*\.(?:js|mjs|cjs|sh|html|css|yml)) {2,}\S/gm)];
