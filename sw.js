@@ -1,94 +1,56 @@
-// 一乘 · 抽刀断水 — offline shell.
+'use strict';
+// 离线可用 + 永不被旧缓存钉住。
 //
-// 口径只有一条：**同源子资源一律网络优先，网络失败才退缓存**。
-// 手写的 VERSION 号 + cache-first 会把 js/css 永久钉死在旧版：出新 HTML 配旧 view.js，
-// 页面看起来"偶尔不对"，而任何静态检查看得出来的一切都是绿的。VERSION 在这里只用来
-// 分代清理旧缓存，不用来决定要不要问网络。
-//
-// file:// 下这段整体不执行（js/pwa.js 里挡），注册失败也从不抛到页面上去。
+// 两条实测换来的口径：
+//   1) 一律 **网络优先**，命中网络才回填缓存。手工 VERSION + cache-first 的组合，
+//      发出去的 HTML 会配上上一版的 js/css，出一个"新界面配旧逻辑"的鬼状态，
+//      而且玩家自己无法恢复（只能等缓存过期）。
+//   2) 缓存名带版本号（activate 时清掉非本版的名字）。改版**不需要**同步 bump：
+//      同名文件重绘之后，网络优先这一条保证客户端下一次联网就拿到新字节。
+const VERSION = 'hitori-cos-v1';
+const CACHE = `${VERSION}-shell`;
+const PRECACHE = ['index.html', 'manifest.webmanifest'];
 
-const VERSION = 'hitori-v1';
-const SHELL = [
-  './',
-  './index.html',
-  './css/game.css',
-  './js/main.js',
-  './manifest.webmanifest',
-];
-const ASSETS = [
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
-  './assets/img/tile-paper.png',
-  './assets/img/tile-ink.png',
-  './assets/img/board-table.png',
-  './assets/img/ripple.png',
-];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(VERSION);
-    // 逐条 add 而不是一把 addAll：一条 404 会让整个 install 失败，于是这个版本永远装不上，
-    // 而 404 的往往正是某一条资产路径——宁可留下"这条没缓存"，不要"什么都缓存不了"。
-    const all = SHELL.concat(ASSETS);
-    const failed = [];
-    for (const url of all) {
-      try {
-        await cache.add(new Request(url, { cache: 'reload' }));
-      } catch (err) {
-        failed.push(url);
-      }
-    }
-    self.__shellFailures = failed;
-    await self.skipWaiting();
-  })());
+self.addEventListener('install', (ev) => {
+  // 首屏两件套先抓下来：断网时至少能打开界面，而不是浏览器的错误页。
+  ev.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(PRECACHE).catch(() => {})).then(() => self.skipWaiting())
+  );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    for (const key of await caches.keys()) {
-      if (key !== VERSION) await caches.delete(key);
-    }
-    await self.clients.claim();
-  })());
+self.addEventListener('activate', (ev) => {
+  ev.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
 });
 
-function sameOrigin(url) {
-  try {
-    return new URL(url, self.location).origin === self.location.origin;
-  } catch (err) {
-    return false;
-  }
-}
-
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET' || !sameOrigin(req.url)) return;
+self.addEventListener('fetch', (ev) => {
+  const req = ev.request;
+  if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // 数据请求（POST 分享、api）与跨源一律不碰；这里只管同源 GET。
-  if (url.pathname.endsWith('/sw.js')) return;
-  event.respondWith((async () => {
-    let fresh = null;
-    try {
-      fresh = await fetch(req);
-    } catch (err) {
-      fresh = null; // 离线，或者服务器拒了 —— 下面退缓存
-    }
-    if (fresh && fresh.ok) {
-      const cache = await caches.open(VERSION);
-      await cache.put(req, fresh.clone());
-      return fresh;
-    }
-    if (fresh) return fresh; // 404/500 也照原样交给页面，别拿缓存冒充 200
-    const hit = await caches.match(req);
-    if (hit) return hit;
-    if (req.mode === 'navigate') {
-      const shell = await caches.match('./index.html');
-      if (shell) return shell;
-    }
-    return new Response('离线，且这一条没有缓存：' + url.pathname, {
-      status: 503,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
-  })());
+  if (url.origin !== self.location.origin) return;
+
+  ev.respondWith(
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
+        return res;
+      })
+      .catch(async () => {
+        const hit = await caches.match(req);
+        if (hit) return hit;
+        // 导航请求（地址栏/刷新/桌面图标）离线时回落到缓存的那份壳，不白屏。
+        if (req.mode === 'navigate') {
+          const shell = await caches.match('index.html');
+          if (shell) return shell;
+        }
+        return Response.error();
+      })
+  );
 });
