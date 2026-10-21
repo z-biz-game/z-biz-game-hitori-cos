@@ -7,9 +7,14 @@
 //
 // node 没有 localStorage，所以每个 case 自己装一个假的，再用 forgetCache() 把模块级缓存清掉——
 // 缓存是模块状态，忘了清就等于第二个 case 读到了第一个 case 的档。
-import test from 'node:test';
+import nodeTest, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanResume, forgetCache, lastDecode, store } from '../js/core/storage.js';
+// 仓里每个 node 套件都打印同一行 `rows: N fail: M`（文档里的「M 条断言」就是对着这一行算的）；
+// node:test 这一族用适配器接到那一行上。
+import { tapSuite } from '../tools/harness.mjs';
+
+const test = tapSuite(nodeTest, after);
 
 function fakeStorage(initial = {}) {
   const data = { ...initial };

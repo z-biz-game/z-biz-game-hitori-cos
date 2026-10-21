@@ -246,8 +246,10 @@ ok(!!docFive && +docFive[1] === studyFive, `D3l 文档那句「${docFive ? docFi
 ok(LOTA.out.includes('✓ 出货 40 盘的每一个负荷值'), 'D3m 「npm run loads 会红」那条判据真的在工具里（不是文档里的一句话）',
   `load-audit 的收尾判据在，rc=${LOTA.rc}`);
 
-// ---- D4 引擎层的条数：真跑五个套件 ----
-ok(SUITES.length === 5 && SUITES.every(s => s.rc === 0 && s.n.length === 2 && s.n[1] === 0),
+// ---- D4 引擎层的条数：真跑全部套件 ----
+// 套件数是**实数**：test/ 目录里有几个 *.test.mjs 就是几个，文档写几个就必须是几个（并线把
+// 本地侧那四个 node:test 套件带进来了，套件数从 5 变成 9，这里的钉跟着实数走，强度不变）。
+ok(SUITES.length === 9 && SUITES.every(s => s.rc === 0 && s.n.length === 2 && s.n[1] === 0),
   `D4a ${SUITES.length} 个 node 套件这一趟全绿（红着的条数不算现值）`,
   SUITES.map(s => `${s.f} rc=${s.rc} rows=${s.n[0] ?? '?'} fail=${s.n[1] ?? '?'}`).join(' · '));
 const suiteTotal = SUITES.reduce((a, s) => a + (s.n[0] || 0), 0);
@@ -257,8 +259,8 @@ ok(docSuites.length >= 1 && docSuites.every(m => +m[1] === SUITES.length && +m[2
   'D4b 文档那句「N 个 node 套件，M 条断言」与两处「M 条引擎断言」逐处等于实跑合计',
   `实跑 ${SUITES.map(s => s.n[0]).join('+')} = ${suiteTotal} · 文档 ${[...docSuites.map(m => `${m[1]}套/${m[2]}条`), ...docEngine.map(n => n + '条引擎')].join(' / ')}`);
 const suiteNames = SUITES.map(s => s.f.replace(/\.test\.mjs$/, ''));
-ok(/5 个 node 套件/.test(DOCS) && suiteNames.length === 5 && readdirSync(join(ROOT, 'test')).filter(f => f.endsWith('.mjs')).length === 6,
-  `D4b test/ 目录里就是文档说的那 ${SUITES.length} 个套件（+ fixtures.mjs）`, `套件 ${suiteNames.join(' ')} · 目录 6 个 .mjs`);
+ok(/9 个 node 套件/.test(DOCS) && suiteNames.length === 9 && readdirSync(join(ROOT, 'test')).filter(f => f.endsWith('.mjs')).length === 10,
+  `D4b test/ 目录里就是文档说的那 ${SUITES.length} 个套件（+ fixtures.mjs）`, `套件 ${suiteNames.join(' ')} · 目录 10 个 .mjs`);
 ok(AUDIT.rc === 0 && /^rows: 40 fail: 0$/m.test(AUDIT.out), `D4c audit-lots 独立核对 40 盘绿（rc=${AUDIT.rc}）`,
   (AUDIT.out.match(/^rows: \d+ fail: \d+$/m) || ['（没读到那一行）'])[0]);
 const blurbClaims = TIERS_META.map(t => {
@@ -391,12 +393,14 @@ ok(gradeSays.length >= 1 && gradeSays.every(s => /over <= 0/.test(s) && /fixes =
   `文档「grade()」句 ${gradeSays.length} 处（${gradeSays.map(s => s.replace(/\s+/g, ' ').slice(0, 44)).join(' / ')}）· 旧写法 taps === minTaps 命中：${(/taps === minTaps/.test(DOCS)) ? '有（红）' : '无'}`);
 const codeKeys = [...new Set([...STORAGE.matchAll(/'(hitori\.\w+\.v\d+)'/g), ...MAIN.matchAll(/'(hitori\.\w+\.v\d+)'/g)].map(m => m[1]))];
 const docKeys = [...new Set((DOCS.match(/hitori\.\w+\.v\d+/g) || []))];
-ok(codeKeys.length === 2 && docKeys.length === 2 && codeKeys.every(k => docKeys.includes(k)),
-  `D7g localStorage 的键：代码里是 ${codeKeys.join(' + ')}，文档写的也是这两个（${docKeys.join(' + ')}）`,
+// 键的个数是**实数**：代码里存了几个键，文档就得点名几个（并线把本地侧那套静音持久化
+// hitori.settings.v1 带进来了，键从 2 个变成 3 个，这里的钉跟着实数走，强度不变）。
+ok(codeKeys.length === 3 && docKeys.length === 3 && codeKeys.every(k => docKeys.includes(k)),
+  `D7g localStorage 的键：代码里是 ${codeKeys.join(' + ')}，文档写的也是这三个（${docKeys.join(' + ')}）`,
   `代码 ${codeKeys.length} 个 · 文档 ${docKeys.length} 个 · 差集 ${[...codeKeys.filter(k => !docKeys.includes(k)), ...docKeys.filter(k => !codeKeys.includes(k))].join(',') || '无'}`);
 const designOneKey = /一个键/.test(DESIGN);
-ok(!designOneKey && /hitori\.resume\.v1/.test(DESIGN) && /两个 localStorage 键/.test(DESIGN),
-  'D7h DESIGN 不再说「一个键」，明写「两个 localStorage 键」并点名 resume 那一个',
+ok(!designOneKey && /hitori\.resume\.v1/.test(DESIGN) && /三个 localStorage 键/.test(DESIGN),
+  'D7h DESIGN 不再说「一个键」，明写「三个 localStorage 键」并点名 resume 那一个',
   'DESIGN 仍写「一个键」：' + designOneKey + ' · 点名 resume：' + /hitori\.resume\.v1/.test(DESIGN));
 ok(OPEN === 0 && SHADED === 1 && DOT === 2 && nextMark(OPEN) === SHADED && nextMark(SHADED) === DOT && nextMark(DOT) === OPEN
   && /OPEN 0 \/ SHADED 1 \/ DOT 2/.test(DOCS) && /未涂 → 涂黑 → 打点 → 未涂/.test(README),

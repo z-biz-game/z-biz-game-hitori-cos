@@ -4,9 +4,14 @@
 // 120Hz 上画出同一个相位；而提示环的相位一旦回到「绝对时间取模」，玩家按下提示就会看见环跳一下。
 // 这里用固定 LCG 造抖动，按同一个虚拟时长分别喂 30/60/120Hz，逐档积分，然后要求三档读到的
 // 相位一致——并且第四发把累加器换成「每帧 +16.6667」，要求它必须散开，否则这把尺是空跑的。
-import test from 'node:test';
+import nodeTest, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_FRAME_MS, breath, createPace, easeOut, phase, progress } from '../js/core/pace.js';
+// 仓里每个 node 套件都打印同一行 `rows: N fail: M`（文档里的「M 条断言」就是对着这一行算的）；
+// node:test 这一族用适配器接到那一行上。
+import { tapSuite } from '../tools/harness.mjs';
+
+const test = tapSuite(nodeTest, after);
 
 const PULSE_MS = 1100; // 与 js/view.js 的呼吸周期同名同值：这里算的就是它算的那个数
 

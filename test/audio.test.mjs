@@ -3,9 +3,14 @@
 // 为什么不用读代码代替：把 gain 设成 0 也写着 mute，读字符串分辨不出来；而线上真正的错法是
 // "静音了还在建振荡器"——手机听不见声音却照样为每个音付费，音频线程一刻不停。这里唯一有意义的
 // 断言是：静音期间的 createOscillator 调用数 = 0，且 suspend() 真的落到了 context 上。
-import test from 'node:test';
+import nodeTest, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAudio } from '../js/core/audio.js';
+// 仓里每个 node 套件都打印同一行 `rows: N fail: M`（文档里的「M 条断言」就是对着这一行算的）；
+// node:test 这一族用适配器接到那一行上。
+import { tapSuite } from '../tools/harness.mjs';
+
+const test = tapSuite(nodeTest, after);
 
 function fakeContext() {
   const ac = {

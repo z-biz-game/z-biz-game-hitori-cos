@@ -847,34 +847,19 @@ function setMuted(next) {
   return session.muted;
 }
 
+// 全屏的"支不支持"与"是不是开着"只有这一份口径：都取自下面那套 fs* 帮手，
+// 别让 HUD 那句（syncHud）与按钮自己那份判断各说各话 —— 按钮说支持、HUD 说不支持，
+// 玩家看到的是一个"按下去没反应"的开关。
+// 支持的判据用 fsRequest（三套 API 前缀），不是只看标准的 requestFullscreen：
+// 老 Safari / 老 Edge 认的是自己那个带前缀的名字。
 function fullscreenSupported() {
   const doc = globalThis.document;
-  return !!(doc && doc.documentElement && typeof doc.documentElement.requestFullscreen === 'function'
-    && doc.fullscreenEnabled !== false);
+  if (doc && doc.fullscreenEnabled === false) return false;
+  return !!fsRequest(fsRoot());
 }
 
 function fullscreenActive() {
-  const doc = globalThis.document;
-  return !!(doc && doc.fullscreenElement);
-}
-
-// No fake fullscreen: on a browser that will not grant it (iOS Safari) the button hides itself
-// rather than promising a chrome-less view it cannot deliver. The promise rejection is caught,
-// because a denied fullscreen is a normal answer, not a crash.
-function toggleFullscreen() {
-  const doc = globalThis.document;
-  if (!fullscreenSupported()) {
-    say('这台设备的全屏由系统手势管，网页按不到这个开关');
-    return false;
-  }
-  if (fullscreenActive()) {
-    const p = doc.exitFullscreen();
-    if (p && p.catch) p.catch(() => {});
-    return false;
-  }
-  const p = doc.documentElement.requestFullscreen();
-  if (p && p.catch) p.catch(() => say('全屏被浏览器拦下了'));
-  return true;
+  return !!fsElement();
 }
 
 function showLearn(next) {
@@ -1116,7 +1101,8 @@ el.wipe.addEventListener('click', () => {
 });
 
 el.sound.addEventListener('click', () => setMuted());
-el.fullscreen.addEventListener('click', () => toggleFullscreen());
+// #btn-fullscreen 的点击由文件末尾那份 bindFullscreen 绑（它还管 fullscreenchange 回写与 F 键）。
+// 这里再绑一条 ⇒ 一次点击进出各一次，净效果是"按了没反应"。
 el.learn.addEventListener('click', () => showLearn());
 el.learnClose.addEventListener('click', () => showLearn(false));
 el.resume.addEventListener('click', () => setPaused(false));
@@ -1158,9 +1144,10 @@ window.addEventListener('keydown', (ev) => {
     else location.hash = '#/';
     return;
   }
-  // 这三个键在目录上也按得动：静音、全屏、玩法，跟手上有没有盘无关。
+  // 这两个键在目录上也按得动：静音、玩法，跟手上有没有盘无关。
+  // 全屏的 F 键由文件末尾那份 bindFullscreen 接（它带 fullscreenchange 回写）——
+  // 这里再接一次就是进出各一次，净效果是"按了没反应"。
   if (k === 'm') { ev.preventDefault(); setMuted(); return; }
-  if (k === 'f') { ev.preventDefault(); toggleFullscreen(); return; }
   if (ev.key === '?') { ev.preventDefault(); showLearn(); return; }
   if (!g) return;
   const n = g.lot.n;
@@ -1277,7 +1264,7 @@ window.hitori = {
   // 暂停/静音/全屏/玩法：走的是按钮同一个函数，不是为测试另开的一条路。
   pause: (v) => setPaused(v),
   mute: (v) => setMuted(v),
-  toggleFullscreen: () => toggleFullscreen(),
+  toggleFullscreen: () => toggleFullscreen(fsRoot()),
   fullscreen: () => ({ supported: fullscreenSupported(), active: fullscreenActive() }),
   learn: (v) => showLearn(v),
   audio: () => audio.stats(),
@@ -1340,10 +1327,23 @@ function fsQuiet(p) {
   return p;
 }
 
-// 返回 true=请求进入，false=请求退出，null=不支持（调用方据此禁用按钮）。
-function toggleFullscreen(root) {
+// 返回 true=请求进入，false=请求退出/不支持，null=调用方据此禁用按钮。
+//
+// 这里只留**一份**实现。之前并线把两套并排放着：一份无参（自己判支持、自己 exitFullscreen），
+// 一份带 root（特性探测 + fullscreenchange 回写 + F 键）。同名函数声明后定义者胜 ⇒
+// 所有无参调用点全部打到带 root 的那份 ⇒ root 是 undefined ⇒ fsRequest(undefined)
+// 直接 TypeError ⇒ 全屏按下去就是一条红。
+//
+// 现在能力取两边并集：三套 API 前缀的探测、Esc 退出后的状态回写、以及那两句"为什么没成"
+// 的话（按不动的按钮要说话，不能悄悄什么都不发生）。
+function toggleFullscreen(root = fsRoot()) {
   const req = fsRequest(root);
-  if (!req) return null;
+  if (!req) {
+    // No fake fullscreen: on a browser that will not grant it (iOS Safari) the button hides
+    // itself rather than promising a chrome-less view it cannot deliver.
+    say('这台设备的全屏由系统手势管，网页按不到这个开关');
+    return false;
+  }
   if (fsElement()) {
     // 退出侧同样要兜底：老 Edge 是 msExitFullscreen；万一三者皆无就当无事发生，不抛。
     const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
@@ -1352,9 +1352,11 @@ function toggleFullscreen(root) {
   }
   // 部分实现（如被 Permissions-Policy 挡住的 iframe）会同步抛，所以 catch 和 .catch 两头都要接。
   try {
-    fsQuiet(req.call(root));
+    const p = req.call(root);
+    // 拒绝即降级：不冒泡、不打断这一局的其余逻辑，但把原因写进状态行。
+    if (p && typeof p.catch === 'function') p.catch(() => say('全屏被浏览器拦下了'));
   } catch (err) {
-    // 拒绝即降级：静默保持当前形态，不冒泡、不打断这一局的其余逻辑。
+    say('全屏被浏览器拦下了');
   }
   return true;
 }
@@ -1404,10 +1406,13 @@ function bindFullscreen(btn) {
 }
 
 function bootFullscreen() {
-  const btn = document.getElementById("btn-fullscreen");
+  // 按钮从 el 表里取：那张表是这张页面的 id 唯一清单。
+  // 并线时页面上有两颗全屏按钮（导航里一颗 #btn-fullscreen、HUD 里一颗 #fullscreen），
+  // 现在只剩 HUD 那颗 —— 全屏与静音、玩法是同一排的窗口级开关，放在路由导航里是串错了地方。
+  const btn = el.fullscreen;
   if (!btn) {
     // 按钮被谁删掉了？在控制台喊出来，别让这个坑静默地烂在下一棒手里。
-    console.warn('[fullscreen] index.html 里找不到 #' + "btn-fullscreen" + '，全屏开关没有入口');
+    console.warn('[fullscreen] index.html 里找不到 #' + "fullscreen" + '，全屏开关没有入口');
     return;
   }
   bindFullscreen(btn);

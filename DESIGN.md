@@ -108,8 +108,9 @@
 
 ## 9. 存档：只存能重放的东西
 
-浏览器侧有两个 localStorage 键：`storage.js` 的 `hitori.save.v1` 放纪录，`js/main.js` 的
-`hitori.resume.v1` 放没下完的那一盘——两个键都是纯 JSON、带版本号，访问路径共用同一层防护。
+浏览器侧有三个 localStorage 键：`storage.js` 的 `hitori.save.v1` 放纪录，`js/main.js` 的
+`hitori.resume.v1` 放没下完的那一盘，`js/main.js` 的 `hitori.settings.v1` 放静音开关——
+三个键都是纯 JSON、带版本号，访问路径共用同一层防护。
 `globalThis.localStorage` 可能**抛异常**
 而不是返回 null（无痕模式、Electron 沙箱），所以每一处访问都在 try 里，失败时降级成内存态并把
 `storageMode` 报出来。续局存 marks + 花费，不存 `audit()` 的结果——那是可以从 marks 重算的，
@@ -141,7 +142,7 @@
 
 ## 11. 五条用红字换来的边界
 
-1. **`display: grid` 会盖掉 UA 的 `[hidden]`**。`css/game.css:57` 给 `.menu` 定了 `display: grid`，
+1. **`display: grid` 会盖掉 UA 的 `[hidden]`**。`css/game.css:83` 给 `.menu` 定了 `display: grid`，
    于是 `el.menu.hidden = true` 完全不生效：战役目录一直画在棋盘旁边，把 `.controls` 顶到 y=1062，
    而视口只有 773 高——`回退一步 / 提示 / 重开` 在桌面窗口里**根本点不到**。修法是每个会隐藏的区块
    都有自己的 `.x[hidden] { display: none }`（现在 `.menu` 补上了，`#board`、`.curtain`、`.panel`、
@@ -183,7 +184,7 @@
 md5 js/data/lots.js && npm run bake && md5 js/data/lots.js   # 两个 md5 必须相同
 node tools/bake.mjs 2>&1 | tail -12                          # 四档的种子数 / 唯一解率 / 落带率 / 出货负荷
 node tools/load-audit.mjs                                    # 生成器能产出哪些负荷（会红；耗时是墙钟，README 那一格才是它的读数）
-npm run check && npm test                                    # 66 条引擎断言
+npm run check && npm test                                    # 87 条引擎断言
 node tools/doctest.mjs     # （154 项 = 144 条等式 + 10 条 unpinned）文档每一个现值都在代码或同一个工具的重算上比一遍
 node tools/sabotage.mjs    # 破坏试验台账：README 那一节的 9 把刀逐把下，闸必须点名变红，再把实测 rc 盖回那一列
 bash tools/verify.sh                                         # 196 条浏览器断言，根形态

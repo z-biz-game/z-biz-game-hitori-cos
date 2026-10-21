@@ -58,64 +58,116 @@ export function storageMode() {
   return lastMode;
 }
 
-// 数字字段的归一自带一份，不依赖仓里有没有 count() —— 少一层隐式耦合。
-function recordNum(v) {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+// One record, or null for "throw this one away". The shape a good save writes is
+// { solved, best, plays, perfect }; anything else — null, a string, a number, a record whose
+// `best` is not a count — is dropped by the caller, which keeps every *other* record.
+function cleanRecord(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (raw.solved !== true) return null;
+  const best = Number(raw.best);
+  const plays = Number(raw.plays);
+  if (!Number.isFinite(best) || best < 0 || best > 1e7) return null;
+  if (!Number.isFinite(plays) || plays < 1 || plays > 1e7) return null;
+  return { solved: true, best: Math.floor(best), plays: Math.floor(plays), perfect: raw.perfect === true };
 }
 
-// 存档两段式解码的第一段：整档 JSON 落到这里之后，**逐字段**归一。
-// 一条记录不是"能用/不能用"二选一 —— 类型错的字段自己退成默认值，整条照样留下。
-// 第二段（sanitizeRecords）在下面：它只丢掉归一后彻底没意义的记录，别的记录不受牵连。
-function sanitizeRecord(r) {
-  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+function cleanRecords(raw) {
   const out = {};
-  out.solved = !!r.solved;
-  out.best = recordNum(r.best);
-  out.plays = recordNum(r.plays);
-  out.perfect = !!r.perfect;
-  return out;
-}
-
-// 逐条隔离：坏的那条丢掉，好的那些原样留下，绝不因为一条把整份存档作废。
-function sanitizeRecords(p) {
-  const out = {};
-  if (!p || typeof p !== 'object' || Array.isArray(p)) return out;
-  for (const [id, rec] of Object.entries(p)) {
-    const clean = sanitizeRecord(rec);
-    if (clean) out[id] = clean;
+  let dropped = 0;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const id of Object.keys(raw)) {
+      if (typeof id !== 'string' || !id || id.length > 64) { dropped += 1; continue; }
+      const rec = cleanRecord(raw[id]);
+      if (rec) out[id] = rec;
+      else dropped += 1;
+    }
+  } else if (raw != null) {
+    dropped += 1; // `records: []` or `records: "x"` is one bad blob, not zero bad records
   }
-  return out;
+  return { out, dropped };
+}
+
+function cleanDaily(raw) {
+  const out = {};
+  let dropped = 0;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const day of Object.keys(raw)) {
+      const entry = raw[day];
+      if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !entry.id) {
+        dropped += 1;
+        continue;
+      }
+      const at = Number(entry.at);
+      out[day] = { id: entry.id.slice(0, 64), at: Number.isFinite(at) && at >= 0 ? Math.floor(at) : 0 };
+    }
+  } else if (raw != null) {
+    dropped += 1;
+  }
+  return { out, dropped };
+}
+
+function cleanStats(raw) {
+  const base = blank().stats;
+  const out = { ...base };
+  let dropped = 0;
+  if (!raw) return { out, dropped };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { out, dropped: 1 };
+  for (const k of Object.keys(base)) {
+    const n = Number(raw[k]);
+    if (Number.isFinite(n) && n >= 0 && n <= 1e9) out[k] = Math.floor(n);
+    else dropped += 1;
+  }
+  return { out, dropped };
+}
+
+// Stage one: JSON.parse (a throw here means there is no save at all). Stage two: the per-field
+// cleaners above. A save that decodes into nothing is treated as no save, and never as an error —
+// the pool lives in js/data/lots.js, so a wiped record cannot hide a level from anyone.
+//
+// 这套解码机件（cleanRecord / cleanRecords / cleanDaily / cleanStats / decode）**是验收认的那一份**：
+// test/storage.test.mjs 的"一条坏记录只准丢那一条"就断在它上面。并线时它被换成了一套
+// "错值一律退成默认值"的实现（recordNum / sanitizeRecord / sanitizeRecords），那份实现
+// 坏记录一条也丢不掉，与闸的口径正好相反 —— 现在换回来。
+function decode(raw) {
+  let p = null;
+  try {
+    p = JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  // 版本门：只认本仓写出去的版本。将来升 v2 时，旧档宁可整档丢弃也不能被误读成新档。
+  // 缺 `v` 的老档照读（那是本仓写这个键之前的老形状）。
+  if (p.v !== undefined && p.v !== SAVE_VERSION) return null;
+  const records = cleanRecords(p.records);
+  const daily = cleanDaily(p.daily);
+  const stats = cleanStats(p.stats);
+  const unlockedRaw = Number(p.unlocked);
+  const unlocked = Number.isFinite(unlockedRaw) && unlockedRaw >= 1 && unlockedRaw <= 1e5
+    ? Math.floor(unlockedRaw)
+    : blank().unlocked;
+  decodeReport = {
+    droppedRecords: records.dropped,
+    droppedDaily: daily.dropped,
+    droppedStats: stats.dropped,
+    clampedUnlocked: !(Number.isFinite(unlockedRaw) && unlockedRaw >= 1),
+  };
+  return { records: records.out, daily: daily.out, unlocked, stats: stats.out };
 }
 
 function load() {
   if (cache) return cache;
   let raw = null;
   try {
-    raw = ls && globalThis.localStorage.getItem(KEY);
+    // 注意这里没有 `ls`：并线时留下的是 `ls && …`，而 `ls` 在这个作用域里**根本没有定义**
+    // ⇒ 每次读档都先抛一次 ReferenceError，又被这行 try/catch 吞掉 ⇒ raw 恒为 null
+    // ⇒ 每次读档都当成空档 ⇒ 玩家存的纪录被一次又一次清空。
+    raw = storage() ? localStorage.getItem(KEY) : null;
   } catch (err) {
     raw = null;
   }
-  if (raw) {
-    try {
-      const p = JSON.parse(raw);
-      // 版本门：只认本仓写出去的版本。将来升 v2 时，旧档宁可整档丢弃也不能被误读成新档。
-      if (p && typeof p === 'object' && !Array.isArray(p)
-          && (p.v === undefined || p.v === SAVE_VERSION)) {
-        const base = blank();
-        cache = {
-          records: sanitizeRecords(p.records),
-          daily: p.daily && typeof p.daily === 'object' ? p.daily : base.daily,
-          unlocked: Number(p.unlocked) > 0 ? Number(p.unlocked) : base.unlocked,
-          stats: { ...base.stats, ...(p.stats || {}) },
-        };
-        return cache;
-      }
-    } catch (err) {
-      /* a corrupt save is not worth keeping */
-    }
-  }
-  cache = blank();
+  const decoded = raw ? decode(raw) : null;
+  cache = decoded || blank();
   return cache;
 }
 

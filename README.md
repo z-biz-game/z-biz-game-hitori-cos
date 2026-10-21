@@ -12,7 +12,7 @@
 ```bash
 npm start                 # http://127.0.0.1:5256/  零依赖静态服务器（5256 是 npm start 传进去的；`node server.cjs` 裸跑落 5173）
 npm run check             # 每个源文件 node --check + 七个页面场景体能否解析
-npm test                  # 5 个 node 套件，66 条断言（引擎层）
+npm test                  # 9 个 node 套件，87 条断言（引擎层）
 npm run unit              # 同一批 test/*.test.mjs 逐个跑，一个文件一个结论（红了知道是哪个文件）
 npm run doctest           # 文档里每一个现值都在代码/工具上重算一遍（154 项 = 144 条等式 + 10 条 unpinned）
 npm run sabotage          # 破坏试验台账：把每类谎写回代码，验闸会点名变红
@@ -42,7 +42,8 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 - 键盘：`c` 聚焦棋盘，方向键移动光标，`Enter` / `空格` 敲当前格，`u` 回退，`r` 重开，`h` 提示。
 - 战役按 `load` 从小到大走完 40 盘；另有今日一题与随机一盘。
 - 进度与纪录只写在本机的 `localStorage`：纪录在 `js/core/storage.js` 的键 `hitori.save.v1`，
-  没下完的那一盘在 `js/main.js` 的键 `hitori.resume.v1`，没有服务端。
+  没下完的那一盘在 `js/main.js` 的键 `hitori.resume.v1`，静音开关在 `js/main.js` 的键
+  `hitori.settings.v1`，没有服务端。
 
 ## 三条规则（提示只会说这些）
 
@@ -152,7 +153,7 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 
 `bash tools/verify.sh` 一条命令一个结论，顺序是固定的：
 
-1. `test/*.test.mjs` 五个 node 套件 + `tools/audit-lots.mjs`（已发布 40 盘的独立核对）先跑；
+1. `test/*.test.mjs` 九个 node 套件 + `tools/audit-lots.mjs`（已发布 40 盘的独立核对）先跑；
    **引擎红着就不启动浏览器**。
 2. `node tools/doctest.mjs`：本文件与 `DESIGN.md` 里印出去的每一个现值，都在代码或同一个工具的重算上
    比一遍（题面行、bake 报告、`npm run loads` 的直方图、断言条数、端口、引用行号、台账）。它是纯逻辑闸，
@@ -203,7 +204,7 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 | `@motion` | 11 | 减少动态效果下提示环仍然会到期 |
 | `@pointer` | 37 | 真鼠标与真键盘：命中盒、面板按钮、胜利卡、键盘层 |
 
-合计 196 条浏览器断言 + 66 条引擎断言。`@pointer` 全部由 Chrome 生成的输入事件驱动，
+合计 196 条浏览器断言 + 87 条引擎断言。`@pointer` 全部由 Chrome 生成的输入事件驱动，
 不调 `window.hitori` 的方法，所以它测的是 `js/view.js` 的指针-格子接线和 CSS 给的命中盒。
 
 **URL 形态**：门禁要跑三遍，因为生产是 Pages 的 `/<repo>/` 前缀形态，而前缀形态是最容易悄悄坏掉的那个。
@@ -259,7 +260,7 @@ js/core/make.js       生成器：种解、删数字、量难度（只在构建�
 js/core/brute.js      第二套独立代码：全枚举与抽样（只在构建期和测试里跑）
 js/core/game.js       一局的状态机：tap / undo / reset / minTaps / grade 的原料
 js/core/library.js    战役顺序、随机一盘、今日一题、统计、难度句子的拼法（spreadText）
-js/core/storage.js    纪录那一个 localStorage 键，带 localStorage 会抛异常的防护（续局在 js/main.js 的另一个键）
+js/core/storage.js    纪录那一个 localStorage 键，带 localStorage 会抛异常的防护（续局与静音在 js/main.js 的另外两个键）
 js/data/lots.js       40 盘烘焙产物：题面、解、实测难度、复核方式
 js/view.js            canvas 渲染、命中、提示环、减少动态效果
 js/main.js            路由、面板、胜利卡、键盘层、window.hitori 测试桥

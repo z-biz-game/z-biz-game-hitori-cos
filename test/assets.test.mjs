@@ -7,11 +7,16 @@
 //     IHDR 实际宽高一致，且至少一张 ≥512、一张 ≥180（Chrome 装机的硬门槛）；
 //   * sw.js 的 SHELL/ASSETS 清单必须全部落盘（清单里有一条 404，install 就白跑一半）；
 //   * 任何一张 PNG 不许是 0 字节，也不许以 SVG 文本冒充。
-import test from 'node:test';
+import nodeTest, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// 仓里每个 node 套件都打印同一行 `rows: N fail: M`（文档里的「M 条断言」就是对着这一行算的）；
+// node:test 这一族用适配器接到那一行上。
+import { tapSuite } from '../tools/harness.mjs';
+
+const test = tapSuite(nodeTest, after);
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
