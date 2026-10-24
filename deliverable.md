@@ -12,7 +12,7 @@
 | 关卡 | 40 盘（4 档 × 10：nook / quiet / study / retreat，题面 4×4 / 5×5 / 6×6），`js/data/lots.js`，构建期由 `tools/bake.mjs` 生成并三路复证 |
 | 依赖 | `dependencies` 0 个、`devDependencies` 0 个（`node -e` 实测，见下） |
 | 二进制资产 | 17 张位图（`icons/` 10 + `assets/img/` 7），无音频、无字体 |
-| node 断言 | 87 条，9 个套件，fail 0（另有文档腿 `tools/doctest.mjs` 154 项 fail 0；破坏试验台账 9 把刀逐把点名变红） |
+| node 断言 | 96 条，10 个套件，fail 0（另有文档腿 `tools/doctest.mjs` 157 项 fail 0；破坏试验台账 10 把刀逐把点名变红） |
 | 浏览器断言 | 196 条，9 段（@boot 24 / @taps 20 / @rules 25 / @logic 16 / @routes 23 / @save 23 / @reloaded 17 / @motion 11 / @pointer 37），fail 0 |
 | 验收命令 | `npm run check` · `npm test` · `node tools/doctest.mjs` · `node tools/sabotage.mjs` · `node tools/deploy-set.mjs` · `bash tools/verify.sh` |
 
@@ -62,6 +62,12 @@ $ git ls-files | grep -cE '\.(png|jpg|jpeg|mp3|wav|woff2?|ttf|svg)$'
 | `tools/doctest.mjs` `test/` 目录 `.mjs` 数 | 6 | 10 | 9 个套件 + `fixtures.mjs` |
 | `tools/doctest.mjs` localStorage 键数 | 2 | 3 | 并线带进来的静音持久化 `hitori.settings.v1` 是真实功能（远端侧根本没有声音子系统） |
 | `DESIGN.md` 行号锚点 | `css/game.css:57` | `css/game.css:83` | `.menu { display: grid; … }` 那行真的挪了（并线把 CSS 块拼了两份） |
+| `tools/doctest.mjs` 套件数 | 9 | 10 | 这一轮加的暂停那一支 `test/pause.test.mjs` |
+| `tools/doctest.mjs` `test/` 目录 `.mjs` 数 | 10 | 11 | 10 个套件 + `fixtures.mjs` |
+| 引擎断言合计（README / DESIGN / 本文件） | 87 | 96 | 暂停那一支 9 条 |
+| `tools/doctest.mjs` 项数 | 154 | 157 | 新增 D4f（暂停那只表必须住在纯模块）+ 台账多一把刀带来的两条 |
+| `tools/deploy-set.mjs` `EXPECT_CHECKS` | 50 | 51 | 页面模块图多了一条边（`./core/pause.js`） |
+| `tools/deploy-set.mjs` `EXPECT_ROWS` | 72 | 73 | 同上，闸自己跑的断言条数 |
 
 闸的**断言一条没改、强度一条没降**：D4a 仍然要求「每个套件这一趟全绿且报出自己的条数」，D4b 仍然要求「文档写的套件数与条数 == 实跑」，D7g 仍然要求「代码里的键集合 == 文档里的键集合」，D8b 仍然要求「文档钉的那一行真的坐着那个符号」。
 
@@ -80,10 +86,10 @@ $ git ls-files | grep -cE '\.(png|jpg|jpeg|mp3|wav|woff2?|ttf|svg)$'
 | `sw.js` | 离线预缓存（SHELL 5 条 + ASSETS 7 条） | `test/assets.test.mjs` `the service worker precache list is entirely on disk`；部署集闸 R10 |
 | `tools/harness.mjs` | 套件的断言小工具 + 本轮新增的 `tapSuite` 适配器 | 每个 node 套件的 `rows: N fail: M` 行（文档腿 D4a/D4b 就是读这一行） |
 | `test/assets.test.mjs` / `test/audio.test.mjs` / `test/pace.test.mjs` / `test/storage.test.mjs` | 四个 `node:test` 套件 | 各自的 `rows:` 行 + 文档腿 D4a/D4b |
-| `tools/doctest.mjs` | 文档现值的对表闸（154 项） | 自身末行 `rows: 154 fail: 0` |
-| `tools/deploy-set.mjs` | 部署集闸（产物清单 / manifest / og / CI 接线） | 自身 `rows: 72 fail: 0` + `deploy-set-selftest.mjs` rc=0 |
+| `tools/doctest.mjs` | 文档现值的对表闸（157 项） | 自身末行 `rows: 157 fail: 0` |
+| `tools/deploy-set.mjs` | 部署集闸（产物清单 / manifest / og / CI 接线） | 自身 `rows: 73 fail: 0` + `deploy-set-selftest.mjs` rc=0 |
 | `package.json` | 脚本与零依赖声明 | `npm test`（CI 第 29 行）、`npm run check` |
-| `README.md` / `DESIGN.md` | 键的个数、套件数、断言数、行号锚点 | 文档腿 154 项 + 破坏试验台账 9 把刀 |
+| `README.md` / `DESIGN.md` | 键的个数、套件数、断言数、行号锚点、暂停那三条 | 文档腿 157 项 + 破坏试验台账 10 把刀 |
 
 未改动但被本轮引用（写出来是为了说明它们**由谁验证**）：
 
@@ -194,12 +200,121 @@ VERIFY_RC=0
 | 命令 | 退出码 | 实数 |
 |---|---|---|
 | `npm run check` | 0 | 每个源文件 `node --check` + 场景体解析 |
-| `npm test` | 0 | 9 个套件共 **87 条**断言，fail 0 |
-| `node tools/doctest.mjs` | 0 | **154 项**，0 失败 |
-| `node tools/sabotage.mjs` | 0 | **9 把刀**，9 把点名变红 |
-| `node tools/deploy-set.mjs` | 0 | **50 条引用** / **72 行**，失败 0 项 |
+| `npm test` | 0 | 10 个套件共 **96 条**断言，fail 0 |
+| `node tools/doctest.mjs` | 0 | **157 项**，0 失败 |
+| `node tools/sabotage.mjs` | 0 | **10 把刀**，10 把点名变红 |
+| `node tools/deploy-set.mjs` | 0 | **51 条引用** / **73 行**，失败 0 项 |
 | `node tools/deploy-set-selftest.mjs` | 0 | 每一刀都按预期发力 |
-| `bash tools/verify.sh` | **0** | node 侧 87 + 154 + 9 + 72，浏览器侧 **196 条**，9/9 格对上 |
+| `bash tools/verify.sh` | **0** | node 侧 96 + 157 + 10 + 73，浏览器侧 **196 条**，9/9 格对上（浏览器腿是上一轮实测；本轮按约束没有起浏览器——场景的断言站点一个没动，196 与 9/9 这两格不变） |
+
+### 这一轮（暂停）的 node 腿原样输出
+
+上面那段是上一轮整闸（含浏览器腿）的原样输出，留着当那一轮的原证。这一轮按约束不起浏览器，
+所以下面只贴 node 腿——这四道闸就是改动的全部见证：
+
+```bash
+$ npm test          # 逐个套件跑，一个文件一个结论
+test/assets.test.mjs     rows: 6 fail: 0
+test/audio.test.mjs      rows: 5 fail: 0
+test/brute.test.mjs      rows: 12 fail: 0
+test/game.test.mjs       rows: 13 fail: 0
+test/make.test.mjs       rows: 9 fail: 0
+test/pace.test.mjs       rows: 5 fail: 0
+test/pause.test.mjs      rows: 9 fail: 0        ← 这一轮新加的暂停那一支
+test/rules.test.mjs      rows: 16 fail: 0
+test/solve.test.mjs      rows: 16 fail: 0
+test/storage.test.mjs    rows: 5 fail: 0
+                                     合计 96 条，10 个套件，fail 0
+
+$ node tools/doctest.mjs
+合计 157 项，0 项失败
+rows: 157 fail: 0
+钉成等式的文档现值：147 项 · 显式 unpinned：10 项
+
+$ node tools/sabotage.mjs
+前提：工作树干净（git status --porcelain 空输出）
+台账：10 把刀 · 命令 node tools/doctest.mjs ｜ node tools/audit-lots.mjs ｜ npm test
+红 ✓ K1 rc=1 点名 2 行 · D2 retreat 行：尺寸 / 出题种子数 / 唯一解率 / 落带率 / 出货负荷 逐格
+红 ✓ K2 rc=1 点名 2 行 · D3 retreat 档：band 与直方图逐格 == make.js 的 TIERS 现值
+红 ✓ K3 rc=1 点名 2 行 · D5e 文档表与 verify.sh 的 EXPECTS 逐格相同（脚本与文档不许有两个数）
+红 ✓ K4 rc=1 点名 2 行 · D4c audit-lots 独立核对 40 盘绿
+红 ✓ K5 rc=1 点名 2 行 · D7f 文档的星级那句逐处写的都是 over <= 0 && fixes === 0，没有写
+红 ✓ K6 rc=1 点名 2 行 · D7m 页面文件（main.js + view.js）的 import 解析到 N 条，其中
+红 ✓ K7 rc=1 点名 2 行 · D8b js/core/grid.js 的行号引用真指着 OPEN
+红 ✓ K8 rc=1 点名 2 行 · D9h DESIGN §13 的复现块里有这两道新闸的命令（照别人抄的复现步骤必须包含全部闸
+红 ✓ K9 rc=1 点名 1 行 · 而 假设+枯竭=
+红 ✓ K10 rc=1 点名 1 行 · 暂停期间计时不前进     ← 这一轮新加的那把刀
+rc 列：与这一轮读到的退出码逐格相同，README 一个字节没动
+合计 10 把刀：10 把点名变红，0 把不合格
+rows: 10 fail: 0
+
+$ node tools/deploy-set.mjs
+部署集：51 条引用（含 4 张位图尺寸核对），失败 0 项
+rows: 73 fail: 0
+
+$ node tools/deploy-set-selftest.mjs
+DS_SELFTEST rc=0（0=每一刀都按预期发力、阴性对照按预期不发力）
+DS_SELFTEST_BASELINE 部署集：51 条引用（含 4 张位图尺寸核对），失败 0 项 rows=73
+```
+
+---
+
+## 这一轮：暂停真停表（2026-10-25）
+
+组织口径反转了：回合制谜题现在也要有**真暂停键**。这一仓的暂停原本就有（`P` 键 + 暂停牌 +
+切标签页自动暂停），但它的正确性**只存在于壳里**——`js/main.js` 自己算 `Date.now()`，node 里
+量不到，于是「暂停真停表」只能靠眼睛看。这一轮把它变成能量的事。
+
+### 先量：三个问题与它们的行号
+
+| 问题 | 答案 | 证据 |
+|---|---|---|
+| 暂停期间计时真的不前进吗 | 是 | `elapsedMs()` 把**正在进行的那一段**暂停实时减掉：`js/core/pause.js:75`（`now − openedAt − pausedMs()`）、`js/core/pause.js:70`（`pausedMs()` 含实时那一段）。暂停期间这个差是常数 |
+| 暂停期间输入真的被拒吗 | 是（补了一处漏网） | 门在 `js/core/pause.js:84`；壳的三个入口都先问门再动盘面：`js/main.js:960`（落子）、`js/main.js:995`（回退）、`js/main.js:1030`（提示）。**漏网的是键盘 `r`（重开）**：它会绕过暂停直接重置盘面，而面板上那个「重开」按钮在暂停期间是被 `disable` 的——这一轮把键盘那一路也接到同一道门上 |
+| 恢复后真的接着走吗 | 是 | `resume()` 把结束的那一段记进 `pausedFor`（只记一次）：`js/core/pause.js:61`；恢复后 `elapsedMs()` = 暂停前用掉的 + 恢复后走过的，暂停那段一秒不算 |
+
+### 改了什么
+
+1. **新增 `js/core/pause.js`（纯模块）**：状态机（`openedAt` / `paused` / `pauseStarted` /
+   `pausedFor`）与算术搬进来，**时钟是注入的**（页面递 `Date.now`，测试递假表）。没有 DOM，
+   也没有 window——门禁 D4f 逐条盯着这一条。
+2. **`js/main.js` 只做接线**：`session` 里那四个暂停字段没有了，壳里只有一个 `clock` 实例；
+   落子 / 回退 / 提示三个入口改成先问 `clock.blocked(...)` 再动盘面。行为与改前逐字一致
+   （用时、续局键、胜负判定都没动）。
+3. **键盘 `r` 暂停期间不再重开**：与面板上那个被 `disable` 的「重开」同一条规矩。暂停牌上那个
+   「重开」按钮是明写出来的一次手势，不受影响。
+4. **新增 `test/pause.test.mjs`（9 条断言）**：手摇的假钟，一根 `setTimeout` 也没有；量的是上线
+   的那份实现。它还带一句**接线**断言：直接读 `js/main.js` 的源码，点名三个入口与键盘那一路必须
+   先问门——只看 core 会漏掉「壳忘了问门」。
+5. **台账多一把刀 K10**：`js/core/pause.js` 的用时里减掉暂停的那一下删掉 ⇒ `npm test` 当场红。
+
+### 变异检（仓内文件一个字不动，刀下在 /tmp 的副本里）
+
+| 刀 | 改坏什么 | 新测试 fail 条数 | 还原证据 |
+|---|---|---|---|
+| K-A | `pausedFor += …` 不再累加（恢复时不把那段记上） | **4**（恢复后接着走 / 反复切换三次 / 新的一盘 / 重复按只记一次） | 还原后 `sha256` 与改前逐位相同（`28454d69…`），`cmp` 与仓里那份逐字节一致 |
+| K-B | `elapsedMs()` 不减 `pausedMs()`（暂停时表照走） | **5**（含「暂停期间计时不前进」本身） | 同上 |
+| K-C | `blocked()` 永远放行（门形同虚设） | **2**（暂停期间输入被拒 / 门一开盘面才动得了） | 同上 |
+
+三刀都在 `/tmp` 的仓副本里下（`rsync` 出来的副本），还原是 `cp` 回仓里那份原件再比 `sha256`；
+下刀前后仓里的 `js/core/pause.js` / `js/main.js` / `test/pause.test.mjs` 三份文件的 `sha256`
+一字未变。
+
+### 已知边界（如实记账，没有顺手改）
+
+- **触摸玩家够不着暂停**：暂停的入口是 `P` 键、暂停牌上的「继续」与切标签页自动暂停，HUD 上
+  没有一颗「暂停」按钮。这仓是装成 app 的 PWA（一指玩是产品要求），手机上没有键盘。
+  组织判据 `sellability.py` 的「暂停」这一条**已经过**（页面上的 `#resume` 按钮带「继续」字样，
+  判据认它），但「玩家够得着的暂停控件」这句话，按触屏口径看还差一颗按钮。改它要动 HUD 与
+  命中盒（浏览器腿那一格 196 条断言会跟着动），不在这一轮的范围里。
+- **方向键在暂停期间仍能移动光标**：光标只是选中框，不动盘面（涂黑 / 打点 / 历史 / 落子数一律
+  不变），且幕布盖着盘面看不见。这一轮只挡了**改动盘面**的动作。
+- **测试桥 `window.hitori.hint(i)` 在暂停期间仍能读**：它是给门禁用的探针，只读盘面、不改盘面
+  （动的是光标与提示行，与方向键同一类）。浏览器闸九个场景里没有一个会先暂停，所以这一路
+  在实跑中也不会被碰到。
+- 浏览器腿（`bash tools/verify.sh` 的 196 条）这一轮没有重跑：按约束不起浏览器。场景的断言
+  站点一个没动（`tools/playtest.mjs` 只改了几处注释里的行号），所以 196 与 9/9 这两格不变；
+  改动的四行是 `js/main.js` 的接线，node 腿与 doctest 逐条盯着。
 
 ---
 
@@ -210,6 +325,10 @@ VERIFY_RC=0
 3. **存档解码口径换回「坏一条只丢那一条」**。并线那版把坏字段一律退成默认值（`best` 变 0、`plays` 变 0），等于把玩家的坏数据悄悄改写成 0；现在坏记录真的会被丢掉，其余记录原样留下。
 4. **静音开关会持久化**（`hitori.settings.v1`，并线带进来的功能，此前文档没写）。刷新页面后静音状态保留；此前它是纯会话态。
 5. **localStorage 键从 2 个变 3 个**：`hitori.save.v1`（纪录）、`hitori.resume.v1`（续局）、`hitori.settings.v1`（静音）。文档（README 与 DESIGN）已按三个键改写。
+6. **暂停期间键盘 `r`（重开）现在被挡住**：它与面板上那个在暂停期间被 `disable` 的「重开」按钮
+   同一条规矩（暂停期间盘面是冻的）。暂停牌上的「重开」按钮不受影响——那是明写出来的一次手势。
+7. **暂停那只表搬到 `js/core/pause.js`**：壳里的行为一字未变，但从此可以被 node 用一只手摇的假钟
+   量（`test/pause.test.mjs`，9 条断言）。屏上的读数、续局键、胜负判定都没动。
 
 ---
 

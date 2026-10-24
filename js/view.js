@@ -109,7 +109,7 @@ export function createView(canvas, handlers = {}) {
     // 原来的 `canvas.style.height = ...` 是在 ResizeObserver 的回调里去改它自己观察的那个盒子：
     // 回调 → 盒子变 → 回调再进一次，Chromium 对这种"一帧内消化不完"的回路抛一条
     // "ResizeObserver loop completed with undelivered notifications."，它经 window 的 error 事件
-    // 进入 js/main.js:909 的采集器，于是 `nothing threw` 那批断言在 GitHub runner 上红了 9 条
+    // 进入 js/main.js:1180 的采集器，于是 `nothing threw` 那批断言在 GitHub runner 上红了 9 条
     // （本机 900×860 永远复现不出来——同一条 notice 只在忙机器上出现）。
     // 位图同值也跳过赋值：同值写入照样清空位图并重置上下文，而 draw() 之后有显式 clearRect。
     const bw = Math.round(cssW * dpr);

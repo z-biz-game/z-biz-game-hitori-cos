@@ -112,7 +112,7 @@ async function clickButton(cdp, sessionId, runJS, id, hold = 20, rest = 55) {
 }
 
 // A real key on the wire: rawKeyDown + char + keyUp, which is what a focused document receives. The
-// shell listens on window (js/main.js:881), so this is the only way to ask whether the 方向键 /
+// shell listens on window (js/main.js:1131), so this is the only way to ask whether the 方向键 /
 // Enter / u / r layer is wired at all — a synthetic KeyboardEvent would prove the handler runs but
 // not that a keyboard can make it run.
 async function pressKey(cdp, sessionId, key, code, text, rest = 70) {
@@ -573,7 +573,7 @@ async function pointerScenario(cdp, sessionId, runJS) {
   const reopened = await st();
   rec('重开 puts a finished board back in play', reopened.done === false && reopened.taps === 0 && reopened.marks.every((m) => m === 0), reopened);
 
-  // The rest of the keyboard layer (js/main.js:881-908) on a live board. Nothing else in this gate
+  // The rest of the keyboard layer (js/main.js:1131-1179) on a live board. Nothing else in this gate
   // drives it, and every row here is a key Chrome generated, not a call into the bridge.
   await pressKey(cdp, sessionId, 'c', 'KeyC', 'c'); // the 重开 press left the focus on a button
   await pressKey(cdp, sessionId, 'ArrowRight', 'ArrowRight');
@@ -773,7 +773,7 @@ const SCENARIOS = {
 
     const shelf = D('shelf').textContent;
     // A '#shelf a' query also catches the 下一盘 link the same paragraph carries, so the claim
-    // "lists the tier the player is in" has to count the tier's own chips (js/main.js:590 renders
+    // "lists the tier the player is in" has to count the tier's own chips (js/main.js:737 renders
     // them into .lots) and the next-row link is asserted separately.
     const cells = document.querySelectorAll("#shelf .lots a[href^='#/lot/']").length;
     rec('the in-game shelf lists the tier the player is in', cells === h.lots.filter((l) => l.tier === h.state.tier).length && has(shelf, 'bake.mjs'), { cells, shelf: shelf.slice(0, 120) });
@@ -1071,7 +1071,7 @@ const SCENARIOS = {
       h.state.id === 'nook-01' && location.hash === '#/lot/nook-01' && D('table').hidden === false && D('panel').hidden === false, { hash: location.hash, id: h.state.id });
     const nav = Array.from(document.querySelectorAll('#modes button.on')).map((b) => b.dataset.route);
     // A '#/campaign' navigation normalises the address bar to a shareable lot link but keeps
-    // route.kind === 'campaign' (js/main.js:144, 262-270), so the lit button is 战役 — the
+    // route.kind === 'campaign' (js/main.js:247, 381), so the lit button is 战役 — the
     // mode actually open. The four nav buttons are menu/campaign/daily/random (index.html:16-19),
     // so a 'lot' highlight is not a thing this shell has; what proves the wiring is the pair:
     // campaign-opened lights 战役, a bare lot link lights nothing.
@@ -1128,12 +1128,12 @@ const SCENARIOS = {
     if (menuHref) { menuHref.click(); await sleep(250); }
     rec('which really changes the board', h.state.id === 'nook-01', h.state.id);
     h.go('#/lot/study-05'); await sleep(250);
-    h.tap(7); // a tap is what moves the cursor (js/main.js:774); a route change is what clears it
+    h.tap(7); // a tap is what moves the cursor (js/main.js:988); a route change is what clears it
     const before = h.state.cursor;
     h.go('#/lot/retreat-01'); await sleep(250);
-    // 'cursor' is the hint/keyboard cursor (a cell index, set by a tap at js/main.js:774 and by a
-    // hint at 814), not a position in the campaign — and opening another board runs openLot,
-    // which puts it back to -1 (main.js:213) because no cell of the old board exists on the new
+    // 'cursor' is the hint/keyboard cursor (a cell index, set by a tap at js/main.js:988 and by a
+    // hint at 1042), not a position in the campaign — and opening another board runs openLot,
+    // which puts it back to -1 (main.js:321) because no cell of the old board exists on the new
     // one. What the route change has to prove is the re-layout: n 5 → 6.
     rec('a route change re-lays the board to the new size and drops the stale cursor',
       h.layout().n === 6 && h.state.n === 6 && before >= 0 && h.state.cursor === -1, { before, cursor: h.state.cursor, layout: h.layout().n });

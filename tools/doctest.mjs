@@ -248,8 +248,9 @@ ok(LOTA.out.includes('✓ 出货 40 盘的每一个负荷值'), 'D3m 「npm run 
 
 // ---- D4 引擎层的条数：真跑全部套件 ----
 // 套件数是**实数**：test/ 目录里有几个 *.test.mjs 就是几个，文档写几个就必须是几个（并线把
-// 本地侧那四个 node:test 套件带进来了，套件数从 5 变成 9，这里的钉跟着实数走，强度不变）。
-ok(SUITES.length === 9 && SUITES.every(s => s.rc === 0 && s.n.length === 2 && s.n[1] === 0),
+// 本地侧那四个 node:test 套件带进来了，套件数从 5 变成 9；暂停那一支再加一个 ⇒ 10，
+// 这里的钉跟着实数走，强度不变）。
+ok(SUITES.length === 10 && SUITES.every(s => s.rc === 0 && s.n.length === 2 && s.n[1] === 0),
   `D4a ${SUITES.length} 个 node 套件这一趟全绿（红着的条数不算现值）`,
   SUITES.map(s => `${s.f} rc=${s.rc} rows=${s.n[0] ?? '?'} fail=${s.n[1] ?? '?'}`).join(' · '));
 const suiteTotal = SUITES.reduce((a, s) => a + (s.n[0] || 0), 0);
@@ -259,8 +260,8 @@ ok(docSuites.length >= 1 && docSuites.every(m => +m[1] === SUITES.length && +m[2
   'D4b 文档那句「N 个 node 套件，M 条断言」与两处「M 条引擎断言」逐处等于实跑合计',
   `实跑 ${SUITES.map(s => s.n[0]).join('+')} = ${suiteTotal} · 文档 ${[...docSuites.map(m => `${m[1]}套/${m[2]}条`), ...docEngine.map(n => n + '条引擎')].join(' / ')}`);
 const suiteNames = SUITES.map(s => s.f.replace(/\.test\.mjs$/, ''));
-ok(/9 个 node 套件/.test(DOCS) && suiteNames.length === 9 && readdirSync(join(ROOT, 'test')).filter(f => f.endsWith('.mjs')).length === 10,
-  `D4b test/ 目录里就是文档说的那 ${SUITES.length} 个套件（+ fixtures.mjs）`, `套件 ${suiteNames.join(' ')} · 目录 10 个 .mjs`);
+ok(/10 个 node 套件/.test(DOCS) && suiteNames.length === 10 && readdirSync(join(ROOT, 'test')).filter(f => f.endsWith('.mjs')).length === 11,
+  `D4b test/ 目录里就是文档说的那 ${SUITES.length} 个套件（+ fixtures.mjs）`, `套件 ${suiteNames.join(' ')} · 目录 11 个 .mjs`);
 ok(AUDIT.rc === 0 && /^rows: 40 fail: 0$/m.test(AUDIT.out), `D4c audit-lots 独立核对 40 盘绿（rc=${AUDIT.rc}）`,
   (AUDIT.out.match(/^rows: \d+ fail: \d+$/m) || ['（没读到那一行）'])[0]);
 const blurbClaims = TIERS_META.map(t => {
@@ -274,6 +275,18 @@ const printedBlurbs = blurbClaims.filter(b => b.printed);
 ok(printedBlurbs.length >= 1 && printedBlurbs.every(b => b.same),
   `D4e 文档真的印了一串 blurb（${printedBlurbs.map(b => b.key).join('/')}），那一串 == spreadText 现在拼出来的`,
   `文档印了 ${printedBlurbs.length} 档的完整 blurb：${printedBlurbs.map(b => b.want.slice(0, 26)).join(' ｜ ')}`);
+
+// 暂停那只表必须住在**纯模块**里：屏上的每一个数都得出自 js/core 是这个仓的规矩，壳只做接线。
+// 暂停是唯一一件「正确性关于时间」的功能，所以它的算术若留在壳里就只能靠眼睛看——
+// 住在 js/core/pause.js，node 里才能用一只假表把它摇起来量（test/pause.test.mjs）。
+const PAUSE_SRC = existsSync(join(ROOT, 'js/core/pause.js')) ? read('js/core/pause.js') : '';
+const PAUSE_CODE = PAUSE_SRC.replace(/\/\/.*$/gm, '');
+const pausePure = PAUSE_SRC !== '' && !/\bdocument\b/.test(PAUSE_CODE) && !/\bwindow\b/.test(PAUSE_CODE);
+const pauseWired = /from '\.\/core\/pause\.js'/.test(MAIN) && /createPauseClock\(\)/.test(MAIN);
+const pauseMapped = /js\/core\/pause\.js/.test(README);
+ok(pausePure && pauseWired && pauseMapped,
+  'D4f 暂停那只表住在纯模块 js/core/pause.js（无 DOM / window），页面走的是它，README 的文件地图点了它',
+  `纯模块 ${pausePure} · 页面接线 ${pauseWired} · README 点名 ${pauseMapped}`);
 
 // ---- D5 门禁的形状：场景表、静态站点数、verify.sh 的条数表 ----
 const sceneRows = [...README.matchAll(/^\| `@(\w+)` \| (\d+) \| (.+?) \|$/gm)];

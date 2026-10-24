@@ -140,6 +140,36 @@
 重算第四次，还断言打印出来的盘数加起来等于这一档真实的行数——不然「写了 9+2 盘而只有 10 盘」
 这种字符串也能被子串检查放过。
 
+### 暂停：唯一一件正确性关于时间的功能
+
+本仓里只有「暂停」这一件事，说的是时间。而关于时间的东西若只写在壳里，就只能靠眼睛看——
+没法在 node 里断言，因为壳要 DOM。所以状态机（`openedAt` / `paused` / `pauseStarted` /
+`pausedFor`）与算术一起搬进 `js/core/pause.js`，**时钟是注入的**：页面递进去 `Date.now`，
+node 套件递进去一只假表，自己手动摇。屏上的每一个数都得出自 `js/core` 是本仓的规矩，
+暂停也不例外：壳（`js/main.js`）只做接线，不做判定。
+
+三件事，三条性质：
+
+1. **表停住**。`elapsedMs()`（`js/core/pause.js:75`）= `now − openedAt − pausedMs()`，而
+   `pausedMs()`（`js/core/pause.js:70`）含着**正在进行的那一段**暂停（实时算）。所以暂停期间
+   `elapsedMs()` 是一个常数，与墙上时间无关——不是等暂停结束才补扣，是当下就不涨。
+2. **盘冻住**。`blocked()`（`js/core/pause.js:84`）是唯一的那道门。壳的三个入口
+   （`takeTap` `js/main.js:960` / `undoStep` `js/main.js:995` / `showHint` `js/main.js:1030`）
+   都**先问门再动盘面**：问到了就直接返回，动词（`tapGame` / `undoGame` / `logicStep`）根本没有
+   机会被调用。键盘那一路也一样——`r`（重开）是改动盘面的动作，暂停期间它与面板上那个被
+   `disable` 的「重开」同一条规矩；暂停牌上的「重开」按钮是明写出来的一次手势，它走自己的路。
+3. **恢复不丢**。`resume()`（`js/core/pause.js:61`）把结束的那一段暂停**记进** `pausedFor`
+   （只记一次，重复按不会记两遍），于是恢复后表从冻住的地方接着走：暂停前用掉的不丢，
+   暂停的那段一秒也不算。换一盘是另一段坐席：`open()`（`js/core/pause.js:44`）把上一盘欠下的
+   暂停一笔勾销，不记到新盘头上。
+
+这三条由 `test/pause.test.mjs`（9 条断言）量着，钟是假的、手摇的，整支测试没有一个真的
+`setTimeout`。那一支还带一句**接线**的断言：它直接读 `js/main.js` 的源码，点名三个入口与键盘
+那一路必须先问门——只看 core 会漏掉「壳忘了问门」这种坏法。
+
+只测 core 也不够，所以这把尺子自己带刀：台账 K10 把 `elapsedMs()` 里减掉 `pausedMs()` 的那一下
+删掉（`js/core/pause.js:75`），`npm test` 当场红 5 条。尺子坏了自己会叫。
+
 ## 11. 五条用红字换来的边界
 
 1. **`display: grid` 会盖掉 UA 的 `[hidden]`**。`css/game.css:83` 给 `.menu` 定了 `display: grid`，
@@ -184,9 +214,9 @@
 md5 js/data/lots.js && npm run bake && md5 js/data/lots.js   # 两个 md5 必须相同
 node tools/bake.mjs 2>&1 | tail -12                          # 四档的种子数 / 唯一解率 / 落带率 / 出货负荷
 node tools/load-audit.mjs                                    # 生成器能产出哪些负荷（会红；耗时是墙钟，README 那一格才是它的读数）
-npm run check && npm test                                    # 87 条引擎断言
-node tools/doctest.mjs     # （154 项 = 144 条等式 + 10 条 unpinned）文档每一个现值都在代码或同一个工具的重算上比一遍
-node tools/sabotage.mjs    # 破坏试验台账：README 那一节的 9 把刀逐把下，闸必须点名变红，再把实测 rc 盖回那一列
+npm run check && npm test                                    # 96 条引擎断言
+node tools/doctest.mjs     # （157 项 = 147 条等式 + 10 条 unpinned）文档每一个现值都在代码或同一个工具的重算上比一遍
+node tools/sabotage.mjs    # 破坏试验台账：README 那一节的 10 把刀逐把下，闸必须点名变红，再把实测 rc 盖回那一列
 bash tools/verify.sh                                         # 196 条浏览器断言，根形态
 BASE_URL=http://127.0.0.1:5257/z-biz-game-hitori-cos/ bash tools/verify.sh   # 同一套，前缀形态
 BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.sh  # 同一套，线上字节

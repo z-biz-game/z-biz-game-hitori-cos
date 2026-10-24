@@ -12,9 +12,9 @@
 ```bash
 npm start                 # http://127.0.0.1:5256/  零依赖静态服务器（5256 是 npm start 传进去的；`node server.cjs` 裸跑落 5173）
 npm run check             # 每个源文件 node --check + 七个页面场景体能否解析
-npm test                  # 9 个 node 套件，87 条断言（引擎层）
+npm test                  # 10 个 node 套件，96 条断言（引擎层）
 npm run unit              # 同一批 test/*.test.mjs 逐个跑，一个文件一个结论（红了知道是哪个文件）
-npm run doctest           # 文档里每一个现值都在代码/工具上重算一遍（154 项 = 144 条等式 + 10 条 unpinned）
+npm run doctest           # 文档里每一个现值都在代码/工具上重算一遍（157 项 = 147 条等式 + 10 条 unpinned）
 npm run sabotage          # 破坏试验台账：把每类谎写回代码，验闸会点名变红
 npm run bake              # 重新出题：生成 → 三条复核 → 写 js/data/lots.js
 npm run audit             # 只核已发布的 40 盘：唯一解、复核强度、负荷分布、档级文案
@@ -44,6 +44,27 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 - 进度与纪录只写在本机的 `localStorage`：纪录在 `js/core/storage.js` 的键 `hitori.save.v1`，
   没下完的那一盘在 `js/main.js` 的键 `hitori.resume.v1`，静音开关在 `js/main.js` 的键
   `hitori.settings.v1`，没有服务端。
+
+## 暂停：表停住、盘冻住、恢复接着走
+
+`P` 键按下去，按住的是三件事。缺一件都不算暂停——所以这三件事各有一条断言在
+`test/pause.test.mjs` 里量着。
+
+- **暂停期间计时不前进**：用时只算玩家真的面对这一盘的时间。暂停期间它一动不动——
+  墙上时间走了五秒，用时一毫秒没动（`js/core/pause.js` 的 `elapsedMs()` 把**正在进行的那一段**
+  暂停实时减掉，而不是等暂停结束才补扣）。
+- **盘冻住**：暂停期间落子、回退、提示、重开（键盘 `r`）全被挡。门在 `js/core/pause.js` 的
+  `blocked()`，壳的三个入口（`takeTap` / `undoStep` / `showHint`）都**先问门再动盘面**。
+  挡下来时屏幕上给一句话（已暂停：按「继续」或 P 再落子），不是静默地不响应。
+- **恢复不丢**：暂停之前用掉的时间不丢，暂停的那段一秒一秒也不算；恢复后表从冻住的地方接着走。
+  连着切三次，三段暂停都被摘掉，用时仍然自洽。
+
+那只表住在 `js/core/pause.js`（纯模块：没有 DOM，也没有 window），所以它能被 node 用一只
+**手摇的假钟**摇起来量：`test/pause.test.mjs` 是 9 条断言，全绿。量的是上线的那份实现，不是它
+的复印件——台账 K10 那一刀把用时里减掉暂停的那一下删掉，这 9 条里有 5 条当场变红。
+
+切标签页会自动暂停（回来只恢复「我们自己按下的那一次」：玩家手动暂停过十分钟，不该因为切出去
+又切回来就被解开）。音频线程是真的 suspend，不是把音量调小。
 
 ## 三条规则（提示只会说这些）
 
@@ -153,7 +174,7 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 
 `bash tools/verify.sh` 一条命令一个结论，顺序是固定的：
 
-1. `test/*.test.mjs` 九个 node 套件 + `tools/audit-lots.mjs`（已发布 40 盘的独立核对）先跑；
+1. `test/*.test.mjs` 十个 node 套件 + `tools/audit-lots.mjs`（已发布 40 盘的独立核对）先跑；
    **引擎红着就不启动浏览器**。
 2. `node tools/doctest.mjs`：本文件与 `DESIGN.md` 里印出去的每一个现值，都在代码或同一个工具的重算上
    比一遍（题面行、bake 报告、`npm run loads` 的直方图、断言条数、端口、引用行号、台账）。它是纯逻辑闸，
@@ -204,7 +225,7 @@ BASE_URL=https://…/z-biz-game-hitori-cos/ bash tools/verify.sh # 对已部署�
 | `@motion` | 11 | 减少动态效果下提示环仍然会到期 |
 | `@pointer` | 37 | 真鼠标与真键盘：命中盒、面板按钮、胜利卡、键盘层 |
 
-合计 196 条浏览器断言 + 87 条引擎断言。`@pointer` 全部由 Chrome 生成的输入事件驱动，
+合计 196 条浏览器断言 + 96 条引擎断言。`@pointer` 全部由 Chrome 生成的输入事件驱动，
 不调 `window.hitori` 的方法，所以它测的是 `js/view.js` 的指针-格子接线和 CSS 给的命中盒。
 
 **URL 形态**：门禁要跑三遍，因为生产是 Pages 的 `/<repo>/` 前缀形态，而前缀形态是最容易悄悄坏掉的那个。
@@ -223,9 +244,9 @@ BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.s
 
 `tools/sabotage.mjs` 里不另存一份刀：**下面这张表就是它的全部刀源**。一行一把刀，8 列 = 刀号、
 这一刀把哪一类谎写回原处、打的是哪个文件、针（必须在那个文件里恰好命中一次，台账行自己不算）、
-改成、必须点名的那条断言、跑的那道闸、实测 rc。这一张表共 9 把刀，覆盖 8 类已经写在文档里的谎：
+改成、必须点名的那条断言、跑的那道闸、实测 rc。这一张表共 10 把刀，覆盖 9 类已经写在文档里的谎：
 表格逐格现值、场景条数表、引擎与独立复核的合计、星级口径、缺席类断言、file:NN 引用锚点、
-接线（复现步骤必须点齐每一道闸）、数据行本身。
+接线（复现步骤必须点齐每一道闸）、数据行本身、暂停那只表的算术。
 
 一把刀算「证过」要三条同时成立：闸的退出码非 0、日志里有一行 FAIL、**并且那一行把第 6 列的断言
 原文写出来**——只比退出码的话，磁盘满、拼错的命令、起不来的浏览器都能把台账刷成一片绿。第 7 列
@@ -247,6 +268,7 @@ BASE_URL=https://z-biz-game.github.io/z-biz-game-hitori-cos/ bash tools/verify.s
 | K7 | file:NN 锚点：把 grid.js 的行号引用挪到不含 OPEN 的那几行 | DESIGN.md | js/core/grid.js:16-18 | js/core/grid.js:120-122 | D8b js/core/grid.js 的行号引用真指着 OPEN | node tools/doctest.mjs | 1 |
 | K8 | 接线：把台账从 DESIGN §13 的复现步骤里抹掉（照着复现的人就再也跑不到它） | DESIGN.md | node tools/sabotage.mjs | # 复现步骤里没有这一条 | D9h DESIGN §13 的复现块里有这两道新闸的命令（照别人抄的复现步骤必须包含全部闸） | node tools/doctest.mjs | 1 |
 | K9 | 数据行本身：把 nook-15 的 load 写成 1，而它的枯竭+假设是 0 | js/data/lots.js | "load":0,"seed":"bake-nook-15" | "load":1,"seed":"bake-nook-15" | 而 假设+枯竭= | node tools/audit-lots.mjs | 1 |
+| K10 | 暂停那只表：把用时里减掉暂停的那一下删了（暂停时表就会照走） | js/core/pause.js | return Math.max(0, now() - openedAt - clock.pausedMs()); | return Math.max(0, now() - openedAt); | 暂停期间计时不前进 | npm test | 1 |
 
 ## 目录
 
@@ -259,6 +281,7 @@ js/core/solve.js      不回溯的铅笔路：facts() + propagate()，也是提�
 js/core/make.js       生成器：种解、删数字、量难度（只在构建期跑）
 js/core/brute.js      第二套独立代码：全枚举与抽样（只在构建期和测试里跑）
 js/core/game.js       一局的状态机：tap / undo / reset / minTaps / grade 的原料
+js/core/pause.js      暂停那只表与唯一的那道门：纯模块，node 里能用一只假钟把它摇起来量
 js/core/library.js    战役顺序、随机一盘、今日一题、统计、难度句子的拼法（spreadText）
 js/core/storage.js    纪录那一个 localStorage 键，带 localStorage 会抛异常的防护（续局与静音在 js/main.js 的另外两个键）
 js/data/lots.js       40 盘烘焙产物：题面、解、实测难度、复核方式
@@ -304,7 +327,7 @@ MIT，见 `LICENSE`。
   内联成 base64 的图标先解码再读同一段。后一条不是可选项：图标可能住在清单里而不是盘上的 `.png`
   （有的仓另有一条"零二进制文件"的承诺，那条只约束"有没有 .png 这个文件"）；如果 P 段只筛文件名，
   声明写 512 而真图 192 就一路放行。
-- **钉住两个数**：R 段实际检查的路径条数（`28`）与这一次跑的断言条数（`46`），两个数
+- **钉住两个数**：R 段实际检查的路径条数（`51`）与这一次跑的断言条数（`73`），两个数
   都钉在 `tools/deploy-set.mjs` 顶部的那对常量里。没改页面却掉了，说明解析断了；删掉一张图标会同时
   少一条 R10 与那张的 P1/P2，所以两个数一起钉，断言条数能漂就是闸在缩水的信号。这一节故意只写数值、
   不写那对常量的名字，也不写别仓文档闸的编号：有的仓的文档闸会拿"文档里出现过的同名标识号"回数它

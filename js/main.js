@@ -28,6 +28,7 @@ import {
   createGame, matchesSolution, minTaps, reset as resetGame, review, solutionMarks,
   tap as tapGame, undo as undoGame,
 } from './core/game.js';
+import { createPauseClock } from './core/pause.js';
 import { MUST_OPEN, MUST_SHADED, UNKNOWN, facts, propagate } from './core/solve.js';
 import {
   ALL, TIERS, byId, campaign, dailyLot, levelAt, lotsIn, randomLot, spreadText, stats as poolStats,
@@ -65,6 +66,10 @@ const el = {
 
 const SETTINGS_KEY = 'hitori.settings.v1';
 
+// 暂停的那只表住在 js/core/pause.js（纯模块：没有 DOM，也没有 window），所以 node 里能用一只
+// 假表把它摇起来量——见 test/pause.test.mjs。壳里只有这一个实例，页面上所有的暂停入口都走它。
+const clock = createPauseClock();
+
 const session = {
   route: { kind: 'menu' },
   lot: null,
@@ -72,16 +77,12 @@ const session = {
   cursor: -1,
   scored: false,
   dailyKey: todayKey(),
-  openedAt: Date.now(),
   toastTimer: 0,
   clockTimer: 0,
   nextId: null,
   hintMsg: '', // the last question asked of the pencil route; cleared by any change to the board
   resume: null, // { id, marks, taps } when the board on screen came out of the resume key
   doneClock: 0, // the clock stops at the win, so the win card and the readout never disagree
-  paused: false,
-  pauseStarted: 0, // wall clock of the 暂停 press, 0 while unpaused
-  pausedFor: 0, // ms taken out of the clock since the board opened
   autoPaused: false, // only a tab-we-hid for gets un-hidden by coming back
   muted: false,
   settingsDecode: { ok: false, reason: 'none', dropped: 0 },
@@ -276,16 +277,10 @@ function mmss(seconds) {
 // Time the player actually spent facing this board. A pause is not a stall they chose to be
 // charged for: `pausedFor` accumulates finished pauses and the open one is added live, so 用时
 // reads the same whether the tab sat in 暂停 for ten minutes or was never paused at all.
-function pausedMs() {
-  return session.pausedFor + (session.paused ? Math.max(0, Date.now() - session.pauseStarted) : 0);
-}
-
-function elapsedMs() {
-  return Math.max(0, Date.now() - session.openedAt - pausedMs());
-}
-
+// The arithmetic itself lives in js/core/pause.js — one implementation, and a node suite can
+// drive it with a fake clock (test/pause.test.mjs). This is the shell's name for it.
 function elapsed() {
-  return Math.floor(elapsedMs() / 1000);
+  return clock.elapsed();
 }
 
 // The campaign position the shelf has not finished yet — where a bare 继续战役 lands.
@@ -324,13 +319,13 @@ function openLot(lot, mayResume) {
   session.game = createGame(lot);
   session.scored = false;
   session.cursor = -1;
-  session.openedAt = Date.now();
   session.hintMsg = '';
   session.resume = null;
   // A new board is a new sitting: no carried-over pause, no pause time billed onto the clock.
-  if (session.paused) setPaused(false);
-  session.pausedFor = 0;
-  session.pauseStarted = 0;
+  // The un-pause comes first (it books the finished pause into the clock), then `open()` wipes
+  // that debt and puts the clock back to zero — same order as before, one implementation now.
+  if (clock.paused) setPaused(false);
+  clock.open();
   session.autoPaused = false;
   el.pausecard.hidden = true;
   view.clearHint();
@@ -647,7 +642,7 @@ function readoutRows() {
 
 // The clock is a display, nothing more: no selection, no save key and no comparison in this
 // file reads it. It stops the moment the board is won, so the win card and the readout agree.
-// (This is *not* the pause — 暂停 lives in `session.paused` and freezes `elapsed()` instead.)
+// (This is *not* the pause — 暂停 lives in `clock.paused` and freezes `elapsed()` instead.)
 function stoppedClock() {
   return session.doneClock;
 }
@@ -789,9 +784,9 @@ function syncButtons() {
   const g = session.game;
   if (!g) return;
   // 暂停期间盘面是冻结的：回退、重开、提示都不给走，指针也进不去（见 takeTap）。
-  el.undo.disabled = !g.history.length || session.paused;
-  el.restart.disabled = !g.taps || session.paused;
-  el.hint.disabled = !!g.done || session.paused;
+  el.undo.disabled = !g.history.length || clock.paused;
+  el.restart.disabled = !g.taps || clock.paused;
+  el.hint.disabled = !!g.done || clock.paused;
 }
 
 // ---------------------------------------------------------------- 暂停 / 静音 / 全屏 / 玩法
@@ -800,25 +795,23 @@ function syncButtons() {
 // clock, the audio thread and the disabled controls can never disagree about whose turn it is.
 // A won board cannot be paused — the win card is already the thing on screen.
 function setPaused(next) {
-  const want = next === undefined ? !session.paused : !!next;
-  if (want === session.paused) return session.paused;
+  const want = next === undefined ? !clock.paused : !!next;
+  if (want === clock.paused) return clock.paused;
   if (want && (!session.game || session.game.done)) return false;
-  session.paused = want;
   if (want) {
-    session.pauseStarted = Date.now();
+    clock.pause();
     audio.suspend(); // 暂停是真的停下来，不是把音量调小
     el.pauseTime.textContent = mmss(elapsed());
     el.resume.focus();
   } else {
-    session.pausedFor += Math.max(0, Date.now() - session.pauseStarted);
-    session.pauseStarted = 0;
+    clock.resume();
     if (!session.muted) audio.resume();
     if (document.activeElement === el.resume) el.board.focus();
   }
   if (!want) session.autoPaused = false;
   el.pausecard.hidden = !want;
   draw();
-  return session.paused;
+  return clock.paused;
 }
 
 // The HUD is a mirror of state, never a second source of truth: called after every change and
@@ -917,7 +910,7 @@ function draw() {
 function startClock() {
   clearInterval(session.clockTimer);
   session.clockTimer = setInterval(() => {
-    if (!session.game || session.game.done || session.paused || document.hidden) return;
+    if (!session.game || session.game.done || clock.paused || document.hidden) return;
     const cell = el.readout.querySelector('dd[data-clock]');
     if (cell) cell.textContent = mmss(elapsed());
     else draw();
@@ -967,8 +960,10 @@ function afterChange() {
 function takeTap(i) {
   const g = session.game;
   if (!g) return null;
-  if (session.paused) {
-    say('已暂停：按「继续」或 P 再落子');
+  // The one door: 暂停期间盘面是冻的，这一格不落。问到了就别去碰 tapGame。
+  const blocked = clock.blocked('tap');
+  if (blocked) {
+    say(blocked);
     return null;
   }
   if (g.done) {
@@ -1000,8 +995,9 @@ function takeTap(i) {
 function undoStep() {
   const g = session.game;
   if (!g) return false;
-  if (session.paused) {
-    say('已暂停：按「继续」或 P 再回退');
+  const blocked = clock.blocked('undo');
+  if (blocked) {
+    say(blocked);
     return false;
   }
   if (!undoGame(g)) {
@@ -1019,14 +1015,12 @@ function restartNow() {
   const g = session.game;
   if (!g) return;
   // 「重开」是这一盘的第二次机会，也是一次真实的手势：先解除暂停，让新的计时从 0 开始。
-  if (session.paused) setPaused(false);
-  session.pausedFor = 0;
-  session.pauseStarted = 0;
+  if (clock.paused) setPaused(false);
+  clock.open();
   resetGame(g);
   session.scored = false;
   session.hintMsg = '';
   session.cursor = -1;
-  session.openedAt = Date.now();
   session.doneClock = 0;
   view.clearHint();
   dropResume();
@@ -1036,8 +1030,9 @@ function restartNow() {
 function showHint() {
   const g = session.game;
   if (!g) return null;
-  if (session.paused) {
-    say('已暂停：先按「继续」或 P 再问题');
+  const blocked = clock.blocked('hint');
+  if (blocked) {
+    say(blocked);
     return null;
   }
   const step = logicStep(session.cursor >= 0 ? session.cursor : -1);
@@ -1120,7 +1115,7 @@ for (const type of ['fullscreenchange', 'fullscreenerror', 'webkitfullscreenchan
 // 不该因为切出去又切回来就被解开。
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    if (session.game && !session.game.done && !session.paused) session.autoPaused = setPaused(true);
+    if (session.game && !session.game.done && !clock.paused) session.autoPaused = setPaused(true);
     return;
   }
   if (session.autoPaused) setPaused(false);
@@ -1140,7 +1135,7 @@ window.addEventListener('keydown', (ev) => {
   // Esc 一层层往后退：玩法弹窗 → 暂停 → 目录。按 ? 打开的人不该再记一个别的关闭键。
   if (ev.key === 'Escape') {
     if (!el.learnCard.hidden) showLearn(false);
-    else if (session.paused) setPaused(false);
+    else if (clock.paused) setPaused(false);
     else location.hash = '#/';
     return;
   }
@@ -1153,7 +1148,15 @@ window.addEventListener('keydown', (ev) => {
   const n = g.lot.n;
   if (k === 'p') { ev.preventDefault(); setPaused(); return; }
   if (k === 'u') { ev.preventDefault(); undoStep(); return; }
-  if (k === 'r') { ev.preventDefault(); restartNow(); return; }
+  if (k === 'r') {
+    ev.preventDefault();
+    // 重开也是改动盘面，所以暂停期间它与面板上那个被 disable 的「重开」同一条规矩：
+    // 键盘这一路也不给走。暂停牌上那个「重开」按钮是明写出来的一次手势，它走 restartNow 自己。
+    const blocked = clock.blocked('restart');
+    if (blocked) { say(blocked); return; }
+    restartNow();
+    return;
+  }
   if (k === 'h') { ev.preventDefault(); showHint(); draw(); return; }
   if (k === 'c') { ev.preventDefault(); el.board.focus(); return; }
   const move = { ArrowUp: -n, ArrowDown: n, ArrowLeft: -1, ArrowRight: 1 }[ev.key];
@@ -1204,11 +1207,11 @@ window.hitori = {
   get route() { return { ...session.route }; },
   get violations() { return session.game ? review(session.game).violations : []; },
   get elapsed() { return session.game && session.game.done ? Math.floor(session.doneClock) : elapsed(); },
-  get paused() { return session.paused; },
+  get paused() { return clock.paused; },
   get muted() { return session.muted; },
   // Seconds taken out of the clock, live: a gate asserts the pause actually stopped the timer
   // rather than merely hiding the board.
-  get pausedFor() { return Math.floor(pausedMs() / 1000); },
+  get pausedFor() { return Math.floor(clock.pausedMs() / 1000); },
   get state() {
     const g = session.game;
     if (!g) {
@@ -1216,7 +1219,7 @@ window.hitori = {
         id: null, route: session.route.kind, n: 0, marks: [], taps: 0, history: [], done: false,
         unlocked: store.unlocked, records: Object.keys(store.records).length,
         resume: !!readResume(), storageMode: store.mode, daily: session.dailyKey, pwa,
-        paused: session.paused, muted: session.muted, pausedFor: Math.floor(pausedMs() / 1000),
+        paused: clock.paused, muted: session.muted, pausedFor: Math.floor(clock.pausedMs() / 1000),
         audio: audio.stats(), settings: { ...session.settingsDecode },
       };
     }
@@ -1233,7 +1236,7 @@ window.hitori = {
       records: Object.keys(store.records).length, resume: !!readResume(),
       storageMode: store.mode, daily: session.dailyKey, dailyDone: store.dailyDone(session.dailyKey),
       stats: { ...store.stats }, elapsed: this.elapsed, pwa,
-      paused: session.paused, muted: session.muted, pausedFor: Math.floor(pausedMs() / 1000),
+      paused: clock.paused, muted: session.muted, pausedFor: Math.floor(clock.pausedMs() / 1000),
       audio: audio.stats(), settings: { ...session.settingsDecode },
     };
   },
