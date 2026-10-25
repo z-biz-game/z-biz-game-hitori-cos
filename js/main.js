@@ -58,7 +58,7 @@ const el = {
   panel: $('panel'), tiers: $('tiers'), menuCount: $('menu-count'), menuNote: $('menu-note'),
   menuCampaign: $('menu-campaign'), menuDaily: $('menu-daily'), menuRandom: $('menu-random'),
   home: $('home'),
-  sound: $('sound'), fullscreen: $('fullscreen'), learn: $('learn'),
+  sound: $('sound'), fullscreen: $('fullscreen'), learn: $('learn'), pauseToggle: $('pause-toggle'),
   learnCard: $('learn-card'), learnClose: $('learn-close'),
   pausecard: $('pausecard'), pauseTime: $('pause-time'), resume: $('resume'),
   pauseRestart: $('pause-restart'), pauseMenu: $('pause-menu'),
@@ -824,7 +824,7 @@ function syncHud() {
   el.fullscreen.textContent = fs ? '退出全屏' : '全屏';
   el.fullscreen.setAttribute('aria-pressed', fs ? 'true' : 'false');
   el.fullscreen.hidden = !fullscreenSupported();
-  el.learn.setAttribute('aria-expanded', el.learnCard.hidden ? 'false' : 'true');
+  el.learn.setAttribute('aria-expanded', el.learnCard.hidden ? 'false' : 'true'); syncPauseBtn(); // 顶栏那颗也是 HUD 的一员，跟着状态走
 }
 
 // Mute is the audio core's mute: while it holds, `ensure()` refuses before `createOscillator` and
@@ -1425,4 +1425,33 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', bootFullscreen);
 } else {
   bootFullscreen();
+}
+
+// ---- 触摸可达的暂停入口 ----
+//
+// 顶栏那颗「暂停 / 继续」是这一页**唯一**一根手指能按到的暂停入口：P 键要键盘，触摸设备
+// 没有键盘，所以在这台机器上只有它能把暂停帘拉开。它不另造一套状态机 —— 按一下走的就是
+// `setPaused`，和 P 键、Esc、暂停帘上的「继续」、切后台自动暂停同一条路。
+//
+// 文案说的是**按下会发生什么**：进行中写「暂停」，暂停中写「继续」。目录上没有盘可打、
+// 这一盘已经赢了的时候这颗钮收起来，免得留一个按下去没反应的按钮在顶上。
+//
+// 位置在顶栏 HUD（有声 / 全屏 / 玩法）那一排里：那是这页唯一一处「一直都在屏幕上、
+// 不用滚」的地方，面板里的控件在窄屏上会掉到盘面底下，够不着。
+function syncPauseBtn() {
+  const btn = el.pauseToggle;
+  if (!btn) return;
+  const g = session.game;
+  const paused = clock.paused;
+  btn.hidden = !g || g.done;
+  btn.textContent = paused ? '继续' : '暂停';
+  btn.title = paused ? '继续这一盘（P）' : '暂停这一盘（P）';
+}
+
+// 绑定和上面那套全屏开关一个规矩：先确认按钮真的在 DOM 里，再绑事件。
+// 页面里没有这颗钮时要在控制台喊出来，不能静悄悄地少一个触摸入口。
+if (el.pauseToggle) {
+  el.pauseToggle.addEventListener('click', () => setPaused());
+} else {
+  console.warn('[pause] index.html 里找不到 #pause-toggle，触摸设备上没有暂停入口');
 }
